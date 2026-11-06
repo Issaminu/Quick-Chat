@@ -140,7 +140,7 @@ enum PageStyleCheck {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.userContentController.addUserScript(WKUserScript(
-            source: QuickChatPageStyle.script, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+            source: QuickChatPageStyle.script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 440, height: 540), configuration: configuration)
         let window = NSWindow(contentRect: web.frame, styleMask: .borderless, backing: .buffered, defer: false)
         window.contentView = web
@@ -148,7 +148,7 @@ enum PageStyleCheck {
         web.loadHTMLString(fixture, baseURL: URL(string: "https://chatgpt.com/"))
         var ready = false
         for _ in 0..<200 where !ready {
-            ready = (try? await web.evaluateJavaScript("!!document.getElementById('quick-chat-page-style')")) as? Bool == true
+            ready = (try? await web.evaluateJavaScript("document.readyState === 'complete' && document.adoptedStyleSheets.some(s => [...s.cssRules].some(r => r.name === 'quick-chat-follow-scroll'))")) as? Bool == true
             try await Task.sleep(for: .milliseconds(25))
         }
         guard ready else { print("FAIL: fixture did not load"); exit(1) }

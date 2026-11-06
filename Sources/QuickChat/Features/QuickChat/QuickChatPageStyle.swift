@@ -90,18 +90,19 @@ enum QuickChatPageStyle {
         }
         /* The page's spacer kept the last message clear of the composer; now it only clears the fade. */
         [data-app-action-timeline-scroll] > :first-child > [aria-hidden="true"]:last-child { height: var(--quick-chat-fade) !important; }
-        /* Messages fade out under the title bar and above the composer. A mask on the scroll area
-           would also hide the composer, so the mask is on the content and a scroll timeline keeps
-           it aligned with the visible area. */
+        /* Messages stop at the bottom edge of the title bar and fade out above the composer. A mask
+           on the scroll area would also hide the composer, so the mask is on the content and a
+           scroll timeline keeps it aligned with the visible area. */
         @keyframes quick-chat-follow-scroll {
             from { mask-position: 0 calc(0px - var(--quick-chat-top)); }
             to { mask-position: 0 100%; }
         }
         [data-app-action-timeline-scroll] > :first-child {
             --quick-chat-top: var(--thread-content-top-inset, 0px);
+            --quick-chat-title-bar: min(var(--app-shell-titlebar-height, 52px), var(--quick-chat-top));
             mask-image: linear-gradient(to bottom,
-                transparent max(0px, calc(var(--quick-chat-top) - 60px)),
-                black max(8px, calc(var(--quick-chat-top) - 20px)),
+                transparent var(--quick-chat-title-bar),
+                black var(--quick-chat-title-bar),
                 black calc(100% - var(--quick-chat-fade)),
                 transparent);
             mask-size: 100% calc(100cqh + var(--quick-chat-top));
@@ -116,15 +117,17 @@ enum QuickChatPageStyle {
         """#
 
     /// Adds the style and a small bridge to the panel: window dragging from the empty title bar
-    /// area, and the page state that the panel's own buttons need.
+    /// area, and the page state that the panel's own buttons need. It runs at document start,
+    /// because ChatGPT shows its page while the HTML continues to load.
     static let script = #"""
         (() => {
             const host = location.hostname.toLowerCase();
             if (host !== "chatgpt.com" && !host.endsWith(".chatgpt.com")) return;
-            const style = document.createElement("style");
-            style.id = "quick-chat-page-style";
-            style.textContent = \#(javaScriptString(css));
-            document.documentElement.append(style);
+            // An adopted style sheet comes after the page's own style sheets, and it is not in the
+            // DOM, so the page cannot remove it when it renders the document again.
+            const style = new CSSStyleSheet();
+            style.replaceSync(\#(javaScriptString(css)));
+            document.adoptedStyleSheets = [...document.adoptedStyleSheets, style];
 
             const post = message => window.webkit?.messageHandlers?.quickChat?.postMessage(message);
             const controls = 'a, button, input, textarea, select, label, summary, [contenteditable="true"], [role="button"], [role="link"], [role="menuitem"], [role="option"], [role="tab"], [role="switch"], [role="slider"]';
@@ -153,12 +156,14 @@ enum QuickChatPageStyle {
             let pending = false;
             const report = () => {
                 pending = false;
+                // Until the page's own style loads, it has no color scheme; the panel then keeps its theme.
+                const scheme = getComputedStyle(document.documentElement).colorScheme;
                 const state = {
                     type: "state",
                     buttons: !!document.querySelector('[data-app-shell-active-page="true"] form[data-chatgpt-composer]') &&
                         !!document.querySelector("header[data-app-shell-titlebar]") &&
                         !covered(innerWidth - 26, 26) && !covered(innerWidth - 70, 26),
-                    dark: getComputedStyle(document.documentElement).colorScheme.includes("dark")
+                    dark: scheme === "normal" ? null : scheme.includes("dark")
                 };
                 const current = JSON.stringify(state);
                 if (current !== previous) { previous = current; post(state); }

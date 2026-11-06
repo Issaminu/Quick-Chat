@@ -45,6 +45,8 @@ enum Check {
         const text = main ? [...main.querySelectorAll('*')].filter(e => e.children.length === 0 && e.textContent.trim() && shown(e) && !e.closest('form')) : [];
         const alpha = color => { const c = document.createElement('canvas').getContext('2d'); c.fillStyle = color; c.fillRect(0, 0, 1, 1); return c.getImageData(0, 0, 1, 1).data[3]; };
         return {
+            styled: document.adoptedStyleSheets.some(s => [...s.cssRules].some(r => r.name === 'quick-chat-follow-scroll')),
+            loading: document.readyState,
             insets: [r.left, innerWidth - r.right, innerHeight - r.bottom],
             radius: getComputedStyle(body).borderTopLeftRadius,
             composerAlpha: alpha(getComputedStyle(rendered('[data-composer-layout][data-composer-surface-variant]') || body).backgroundColor) + alpha(getComputedStyle(body).backgroundColor),
@@ -58,8 +60,12 @@ enum Check {
         };
         """
     static func checkLayout(_ web:WKWebView,_ state:String,empty:Bool) async {
+        // Until the HTML finishes loading, ChatGPT shows a placeholder page without its title bar.
+        await wait(30) { (await js(web,"return document.readyState === 'complete' && !!document.querySelector('header[data-app-shell-titlebar]')")) as? Bool == true }
+        try? await Task.sleep(for:.milliseconds(500))
         guard let m = await js(web,measure) as? [String:Any] else { return check(false,"\(state): composer is on the page") }
-        check((m["insets"] as? [Double]) == [8,8,8],"\(state): composer insets are 8 points",m["insets"]!)
+        check(m["styled"] as? Bool == true,"\(state): the panel style is on the page","page is \(m["loading"]!)")
+        check((m["insets"] as? [Double])?.map{$0.rounded()} == [8,8,8],"\(state): composer insets are 8 points",m["insets"]!)
         check(m["radius"] as? String == "12px","\(state): composer corners are concentric with the window",m["radius"]!)
         let composerAlpha=m["composerAlpha"] as? Int ?? 0
         check(composerAlpha > 0 && composerAlpha < 80,"\(state): composer is translucent",composerAlpha)
@@ -86,7 +92,7 @@ enum Check {
         }
         try? await Task.sleep(for:.seconds(1))
         await checkLayout(web,"empty chat",empty:true)
-        check(visible(buttons)==["open","temporary"],"empty chat: panel shows Open in Browser and Temporary Chat",visible(buttons))
+        check(visible(buttons)==["open","temporary"],"empty chat: panel shows Open in Browser and Temporary Chat",await js(web,"return [document.elementFromPoint(innerWidth - 26, 26), document.elementFromPoint(innerWidth - 70, 26)].map(e => e?.outerHTML.slice(0, 160)).join(' | ') + ' active:' + !!document.querySelector('[data-app-shell-active-page=\"true\"] form[data-chatgpt-composer]')") as Any)
 
         buttons.temporaryChat.performClick(nil)
         await wait(10) { QuickChatLocation(web.url).isTemporary }
@@ -102,8 +108,12 @@ enum Check {
         // Opens the most recent conversation from the sidebar, which lists conversations only while open.
         let opened=await js(web,"""
             const rendered = () => [...document.querySelectorAll('a[href*="/c/"]')].find(e => e.getClientRects().length);
-            [...document.querySelectorAll('header[data-app-shell-titlebar] button[aria-controls]')].find(e => e.getClientRects().length)?.click();
-            for (let i = 0; i < 50 && !rendered(); i++) await new Promise(resolve => setTimeout(resolve, 100));
+            const sidebarButton = () => [...document.querySelectorAll('header[data-app-shell-titlebar] button[aria-controls]')].find(e => e.getClientRects().length);
+            // The list loads after the sidebar opens. A click during a page change can be lost, so click again.
+            for (let i = 0; i < 150 && !rendered(); i++) {
+                if (i % 30 === 0 && sidebarButton()?.getAttribute('aria-expanded') !== 'true') sidebarButton()?.click();
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
             await new Promise(resolve => setTimeout(resolve, 800)); // let the sidebar finish opening
             const link = rendered();
             link?.click();
@@ -122,7 +132,7 @@ enum Check {
             await wait(10) { !QuickChatLocation(web.url).isConversation }
             check(!QuickChatLocation(web.url).isConversation,"Command-N starts a new chat",web.url as Any)
         } else {
-            print("SKIP conversation checks: no conversation in the sidebar")
+            print("SKIP conversation checks: no conversation in the sidebar", await js(web,"return [document.querySelectorAll('a[href*=\"/c/\"]').length, [...document.querySelectorAll('[aria-controls]')].map(e => e.getAttribute('aria-expanded')).join(), location.href]") as Any)
         }
         controller.tearDown()
         print("\(failures) failed checks")

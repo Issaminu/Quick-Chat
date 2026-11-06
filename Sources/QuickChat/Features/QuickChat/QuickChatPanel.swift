@@ -201,7 +201,7 @@ final class QuickChatController: NSObject {
         config.websiteDataStore = .default()
         config.mediaTypesRequiringUserActionForPlayback = []
         config.userContentController.addUserScript(WKUserScript(source: QuickChatPageStyle.script,
-                                                                injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+                                                                injectionTime: .atDocumentStart, forMainFrameOnly: true))
         if let safariURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Safari"),
            let version = Bundle(url: safariURL)?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
             config.applicationNameForUserAgent = "Version/\(version) Safari/605.1.15"

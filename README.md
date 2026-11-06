@@ -44,7 +44,7 @@ Quick Chat enables its global shortcut automatically when the app launches; the 
   - In a conversation: **Open in Browser** (opens that conversation) and **New Chat** (same as ⌘N).
   - In a temporary chat, there is no Open in Browser, because the browser cannot show a temporary chat.
 - The empty chat shows only the composer: greetings, suggestions and notices are hidden. The Chat / Work switch, the conversation title and the disclaimer are hidden too.
-- The composer is translucent, with 8-point side and bottom insets and a 12-point corner radius that is concentric with the 20-point window corners. Messages end at the composer's top edge and fade out above it, so no text shows beside, below or through the composer.
+- The composer is translucent, with 8-point side and bottom insets and a 12-point corner radius that is concentric with the 20-point window corners. Messages end at the composer's top edge and fade out above it, so no text shows beside, below or through the composer. At the top, messages stop at the bottom edge of the title bar.
 - Drag an empty area at the top of the chat to move the panel. Double-click that area, or press ⌘F, to maximize or restore its size. ⌘O resets it to the default size.
 - The panel follows ChatGPT's light or dark theme.
 - It stays on top of other windows, including full-screen apps, and doesn't hide when you click elsewhere. The shortcut, Esc or ⌘W hides it.
