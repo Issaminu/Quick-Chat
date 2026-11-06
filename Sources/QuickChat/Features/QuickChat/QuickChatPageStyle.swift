@@ -117,19 +117,15 @@ enum QuickChatPageStyle {
             height: calc(100% - var(--quick-chat-composer-area)) !important;
             flex: none !important;
             container-type: size;
-            scroll-timeline: --quick-chat-thread block;
         }
         /* The page's spacer kept the last message clear of the composer; now it only clears the fade. */
         [data-app-action-timeline-scroll] > :first-child > [aria-hidden="true"]:last-child { height: var(--quick-chat-fade) !important; }
         /* Messages stop at the bottom edge of the title bar (they fade in under it while it is
            hidden) and fade out above the composer. A mask on the scroll area would also hide the
-           composer, so the mask is on the content and a scroll timeline keeps it aligned with
-           the visible area. A short conversation cannot scroll, so its timeline is inactive; the
-           mask position then stays at the start value. */
-        @keyframes quick-chat-follow-scroll {
-            from { mask-position: 0 calc(0px - var(--quick-chat-top)); }
-            to { mask-position: 0 100%; }
-        }
+           composer, so the mask is on the content. The page script moves the mask with the visible
+           area (alignMask). It does not use a scroll timeline: WebKit can keep a scroll timeline's
+           old progress after the conversation grows, until the next scroll, and the mask then
+           hides the top of the visible messages. These values apply until the script runs. */
         [data-app-action-timeline-scroll] > :first-child {
             --quick-chat-top: var(--thread-content-top-inset, 0px);
             --quick-chat-title-bar: min(var(--app-shell-titlebar-height, 52px), var(--quick-chat-top));
@@ -141,8 +137,6 @@ enum QuickChatPageStyle {
             mask-size: 100% calc(100cqh + var(--quick-chat-top));
             mask-position: 0 calc(0px - var(--quick-chat-top));
             mask-repeat: no-repeat;
-            animation: quick-chat-follow-scroll linear both;
-            animation-timeline: --quick-chat-thread;
         }
 
         /* Text looks like native text: the system's font smoothing, and 15-point message text like
@@ -301,11 +295,39 @@ enum QuickChatPageStyle {
                 return !!element && element !== document.documentElement && element !== document.body &&
                     !element.closest("main, header[data-app-shell-titlebar]");
             };
+            // The message mask covers the visible area of the message list: its top edge is at the
+            // top of the scroll area, and its height is the scroll area's height. The values are
+            // set on the content element only when they change.
+            const scrollerSelector = "[data-app-action-timeline-scroll]";
+            const masks = new WeakMap();
+            let scroller = null;
+            // False also when the page changed the element's inline style.
+            const maskIsSet = content => {
+                const mask = masks.get(content);
+                return !!mask && content.style.maskPosition === mask.position && content.style.maskSize === mask.size;
+            };
+            const alignMask = target => {
+                const content = target?.firstElementChild;
+                if (!content) return;
+                const y = target.getBoundingClientRect().top + target.clientTop - content.getBoundingClientRect().top;
+                const wanted = `0 ${Math.round(y * 100) / 100}px|100% ${target.clientHeight}px`;
+                if (maskIsSet(content) && masks.get(content).wanted === wanted) return;
+                [content.style.maskPosition, content.style.maskSize] = wanted.split("|");
+                masks.set(content, { wanted, position: content.style.maskPosition, size: content.style.maskSize });
+            };
+            document.addEventListener("scroll", event => {
+                if (event.target instanceof Element && event.target.matches(scrollerSelector)) {
+                    scroller = event.target;
+                    alignMask(scroller);
+                }
+            }, { capture: true, passive: true });
             let previous = "";
             let pending = false;
             let loadedAWhileAgo = false;
             const report = () => {
                 pending = false;
+                const rendered = [...document.querySelectorAll(scrollerSelector)].find(e => e.getClientRects().length);
+                if (rendered) { scroller = rendered; alignMask(rendered); }
                 // Until the page's own style loads, it has no color scheme; the panel then keeps its theme.
                 const scheme = getComputedStyle(document.documentElement).colorScheme;
                 const titleBar = !!document.querySelector("header[data-app-shell-titlebar]");
@@ -339,7 +361,13 @@ enum QuickChatPageStyle {
                 pending = true;
                 if (document.hidden) setTimeout(report, 100); else requestAnimationFrame(report);
             };
-            new MutationObserver(schedule).observe(document.documentElement, {
+            new MutationObserver(records => {
+                // The mask's own changes need no report.
+                if (records.every(r => r.type === "attributes" && r.attributeName === "style" && maskIsSet(r.target))) return;
+                // New content (the page renders the message list again) gets its mask at once.
+                if (scroller?.isConnected && scroller.firstElementChild && !maskIsSet(scroller.firstElementChild)) alignMask(scroller);
+                schedule();
+            }).observe(document.documentElement, {
                 childList: true, subtree: true, attributes: true,
                 attributeFilter: ["class", "style", "hidden", "open", "aria-expanded", "aria-hidden", "data-state", "data-theme"]
             });

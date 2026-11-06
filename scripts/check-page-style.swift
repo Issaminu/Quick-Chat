@@ -134,8 +134,7 @@ enum PageStyleCheck {
                 const scroller = $('[data-app-action-timeline-scroll]');
                 const content = scroller.firstElementChild;
                 result['messages end at the composer top'] = Math.abs(scroller.getBoundingClientRect().bottom - rect.top) < 1;
-                result['messages fade with the scroll position'] = getComputedStyle(content).maskImage.includes('gradient') &&
-                    getComputedStyle(content).animationName === 'quick-chat-follow-scroll';
+                result['messages fade above the composer'] = getComputedStyle(content).maskImage.includes('gradient');
                 result['a code block passes the scroll on at its ends'] = getComputedStyle($('#code')).overscrollBehaviorY === 'auto';
                 const select = e => getComputedStyle(e).webkitUserSelect || getComputedStyle(e).userSelect;
                 result['only message text, the composer and fields can be selected'] = select(document.body) === 'none' &&
@@ -167,7 +166,7 @@ enum PageStyleCheck {
         web.loadHTMLString(fixture, baseURL: URL(string: "https://chatgpt.com/"))
         var ready = false
         for _ in 0..<200 where !ready {
-            ready = (try? await web.evaluateJavaScript("document.readyState === 'complete' && document.adoptedStyleSheets.some(s => [...s.cssRules].some(r => r.name === 'quick-chat-follow-scroll'))")) as? Bool == true
+            ready = (try? await web.evaluateJavaScript("document.readyState === 'complete' && document.adoptedStyleSheets.some(s => [...s.cssRules].some(r => r.name === '--quick-chat-title-bar-shown'))")) as? Bool == true
             try await Task.sleep(for: .milliseconds(25))
         }
         guard ready else { print("FAIL: fixture did not load"); exit(1) }
@@ -185,6 +184,36 @@ enum PageStyleCheck {
                 if !result[name]! { failures += 1 }
             }
         }
+        // The mask covers the visible part of the message list in each of these cases.
+        _ = try await web.evaluateJavaScript("show('conversation')")
+        try await Task.sleep(for: .milliseconds(200))
+        let maskCases = try await web.callAsyncJavaScript("""
+            const frames = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+            const scroller = document.querySelector('[data-app-action-timeline-scroll]');
+            const aligned = () => {
+                const content = scroller.firstElementChild, style = getComputedStyle(content);
+                const y = parseFloat(style.maskPosition.split(' ')[1]), height = parseFloat(style.maskSize.split(' ')[1]);
+                const top = scroller.getBoundingClientRect().top + scroller.clientTop - content.getBoundingClientRect().top;
+                return Math.abs(y - top) < 1 && Math.abs(height - scroller.clientHeight) < 1;
+            };
+            const result = {};
+            scroller.scrollTop = (scroller.scrollHeight - scroller.clientHeight) / 2; await frames();
+            result['after a scroll'] = scroller.scrollTop > 0 && aligned();
+            const extra = document.createElement('p'); extra.style.height = '600px';
+            scroller.firstElementChild.prepend(extra); await frames();
+            result['after the content grows with no scroll'] = aligned();
+            scroller.firstElementChild.replaceWith(scroller.firstElementChild.cloneNode(true)); await frames();
+            result['after the page renders the list again'] = aligned();
+            scroller.firstElementChild.style.cssText = ''; await frames();
+            result['after the page changes the inline style of the list'] = aligned();
+            scroller.firstElementChild.querySelector('p').remove(); scroller.scrollTop = 0; await frames();
+            return result;
+            """, arguments: [:], in: nil, contentWorld: .page) as! [String: Bool]
+        for name in maskCases.keys.sorted() {
+            print("\(maskCases[name]! ? "PASS" : "FAIL") the mask covers the visible messages \(name)")
+            if !maskCases[name]! { failures += 1 }
+        }
+
         // Light mode: the primary button turns black with a white icon.
         let lightButton = try await web.evaluateJavaScript("""
             (() => {

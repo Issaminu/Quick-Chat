@@ -50,7 +50,7 @@ enum Check {
         const text = main ? [...main.querySelectorAll('*')].filter(e => e.children.length === 0 && e.textContent.trim() && shown(e) && !e.closest('form')) : [];
         const alpha = color => { const c = document.createElement('canvas').getContext('2d'); c.fillStyle = color; c.fillRect(0, 0, 1, 1); return c.getImageData(0, 0, 1, 1).data[3]; };
         return {
-            styled: document.adoptedStyleSheets.some(s => [...s.cssRules].some(r => r.name === 'quick-chat-follow-scroll')),
+            styled: document.adoptedStyleSheets.some(s => [...s.cssRules].some(r => r.name === '--quick-chat-title-bar-shown')),
             loading: document.readyState,
             insets: [r.left, innerWidth - r.right, innerHeight - r.bottom],
             radius: getComputedStyle(body).borderTopLeftRadius,
@@ -63,7 +63,13 @@ enum Check {
             textSize: scroller ? getComputedStyle(scroller.firstElementChild).getPropertyValue('--font-text-md-size').trim() : null,
             textOutsideComposer: text.map(e => e.textContent.trim().slice(0, 30)).slice(0, 5),
             gap: scroller ? Math.round(r.top - scroller.getBoundingClientRect().bottom) : null,
-            mask: scroller ? getComputedStyle(scroller.firstElementChild).animationName : null,
+            // The mask covers the visible part of the message list.
+            mask: scroller ? (() => {
+                const content = scroller.firstElementChild, style = getComputedStyle(content);
+                const y = parseFloat(style.maskPosition.split(' ')[1]), height = parseFloat(style.maskSize.split(' ')[1]);
+                const top = scroller.getBoundingClientRect().top + scroller.clientTop - content.getBoundingClientRect().top;
+                return style.maskImage.includes('gradient') && Math.abs(y - top) < 1 && Math.abs(height - scroller.clientHeight) < 1;
+            })() : null,
             conversation: rendered('a[href*="/c/"]')?.getAttribute('href') || document.querySelector('a[href*="/c/"]')?.getAttribute('href') || null
         };
         """
@@ -86,7 +92,7 @@ enum Check {
             check((m["textOutsideComposer"] as? [String])?.isEmpty == true,"\(state): no greeting or notice text",m["textOutsideComposer"]!)
         } else {
             check(m["gap"] as? Int == 0,"\(state): messages end at the composer top",m["gap"]!)
-            check(m["mask"] as? String == "quick-chat-follow-scroll","\(state): messages fade above the composer",m["mask"]!)
+            check(m["mask"] as? Bool == true,"\(state): the message mask covers the visible messages",m["mask"]!)
             check(m["textSize"] as? String == "15px","\(state): message text is 15 points",m["textSize"]!)
         }
     }
