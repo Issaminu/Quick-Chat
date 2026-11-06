@@ -13,6 +13,7 @@ final class QuickChatController: NSObject {
     private let log = Log.make("QuickChat")
     private var panel: QuickChatPanel?
     private var webView: WKWebView?
+    private weak var dragRegion: DraggableView?
     private var previousApp: NSRunningApplication?
     /// Where each in-flight download is being written, for "reveal in Finder" when it finishes.
     private var downloadDestinations: [ObjectIdentifier: URL] = [:]
@@ -108,6 +109,8 @@ final class QuickChatController: NSObject {
         background.layer?.masksToBounds = true
         let webView = makeWebView()
         let dragRegion = DraggableView()
+        dragRegion.isHidden = true
+        webView.configuration.userContentController.add(HeaderControlsHandler(dragRegion), name: "quickChatHeaderControls")
         for view in [webView, dragRegion] {
             view.translatesAutoresizingMaskIntoConstraints = false
             background.addSubview(view)
@@ -117,31 +120,48 @@ final class QuickChatController: NSObject {
             webView.trailingAnchor.constraint(equalTo: background.trailingAnchor),
             webView.topAnchor.constraint(equalTo: background.topAnchor),
             webView.bottomAnchor.constraint(equalTo: background.bottomAnchor),
-            dragRegion.leadingAnchor.constraint(equalTo: background.leadingAnchor, constant: 56),
-            dragRegion.trailingAnchor.constraint(equalTo: background.trailingAnchor, constant: -56),
+            dragRegion.leadingAnchor.constraint(equalTo: background.leadingAnchor),
+            dragRegion.trailingAnchor.constraint(equalTo: background.trailingAnchor),
             dragRegion.topAnchor.constraint(equalTo: background.topAnchor),
             dragRegion.heightAnchor.constraint(equalToConstant: 44),
         ])
         panel.contentView = background
 
-        if !panel.setFrameUsingName(QuickChatPanel.autosaveName) {
-            center(panel)
-        }
-        panel.setFrameAutosaveName(QuickChatPanel.autosaveName)
+        restorePosition(of: panel)
 
         self.panel = panel
         self.webView = webView
+        self.dragRegion = dragRegion
         webView.load(URLRequest(url: Self.chatURL))
         return panel
     }
 
-    private func center(_ panel: NSPanel) {
+    private func restorePosition(of panel: NSPanel) {
+        let saved = UserDefaults.standard.string(forKey: "NSWindow Frame \(QuickChatPanel.autosaveName)")?
+            .split(separator: " ").prefix(4).compactMap { Double($0) }
+        panel.setFrameAutosaveName(QuickChatPanel.autosaveName)
+        guard saved != nil, panel.setFrameUsingName(QuickChatPanel.autosaveName) else {
+            placeInitially(panel)
+            return
+        }
+        // AppKit can remap an external display's saved frame to the main display. Keep the
+        // original coordinates when they still fit; otherwise use AppKit's adjusted frame.
+        if let saved, saved.count == 4, saved.allSatisfy({ $0.isFinite }),
+           saved[2] >= panel.minSize.width, saved[3] >= panel.minSize.height {
+            let frame = NSRect(x: saved[0], y: saved[1], width: saved[2], height: saved[3])
+            if NSScreen.screens.contains(where: { $0.visibleFrame.contains(frame) }) {
+                panel.setFrame(frame, display: false)
+            }
+        }
+    }
+
+    private func placeInitially(_ panel: NSPanel) {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
         guard let visible = screen?.visibleFrame else { return }
         let size = panel.frame.size
         panel.setFrameOrigin(NSPoint(x: visible.midX - size.width / 2,
-                                     y: visible.minY + (visible.height - size.height) * 0.6))
+                                     y: visible.minY + 32))
     }
 
     private func makeWebView() -> WKWebView {
@@ -167,7 +187,29 @@ final class QuickChatController: NSObject {
     }
 
     private func newConversation() {
-        webView?.load(URLRequest(url: Self.chatURL))
+        guard let webView, let url = webView.url, url.scheme == "https",
+              let host = url.host, Self.isChatGPTHost(host) else { return }
+        webView.evaluateJavaScript("""
+            (() => {
+                const button = document.querySelector('[data-testid="create-new-chat-button"], [data-testid="new-chat-button"], [aria-label^="New chat" i]')
+                    || [...document.querySelectorAll('button, a, [role="button"]')].find(element =>
+                        /^new chat(?:$|\\s)/i.test((element.getAttribute('aria-label') || element.textContent || '').trim()));
+                if (button) { button.click(); return true; }
+                // The compact page may unmount the sidebar button; use the site's own shortcut then.
+                const event = new KeyboardEvent('keydown', {
+                    key: 'O', code: 'KeyO', keyCode: 79, which: 79,
+                    metaKey: true, shiftKey: true, bubbles: true, cancelable: true
+                });
+                return !(document.activeElement || document.body).dispatchEvent(event);
+            })();
+            """) { [weak self] result, error in
+                if error != nil || result as? Bool != true {
+                    self?.log.error("Could not invoke ChatGPT's New chat action")
+                    NSSound.beep()
+                } else {
+                    self?.focusComposer()
+                }
+            }
     }
 
     private func focusComposer() {
@@ -176,7 +218,7 @@ final class QuickChatController: NSObject {
     }
 
     /// chatgpt.com or a subdomain of it (not e.g. "notchatgpt.com").
-    private static func isChatGPTHost(_ host: String) -> Bool {
+    fileprivate static func isChatGPTHost(_ host: String) -> Bool {
         let host = host.lowercased()
         return host == "chatgpt.com" || host.hasSuffix(".chatgpt.com")
     }
@@ -262,6 +304,10 @@ extension QuickChatController: WKUIDelegate, WKNavigationDelegate, WKDownloadDel
 
     func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
         download.delegate = self
+    }
+
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        dragRegion?.isHidden = true
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -482,11 +528,40 @@ final class QuickChatPanel: NSPanel {
 
 /// Drag the empty middle of the web header without covering its buttons or adding a bar.
 private final class DraggableView: NSView {
+    var controls: [NSRect] = []
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = convert(point, from: superview)
+        let webPoint = NSPoint(x: local.x + frame.minX, y: bounds.height - local.y)
+        if controls.contains(where: { $0.contains(webPoint) }) { return nil }
+        return super.hitTest(point)
+    }
+
     override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2 {
             (window as? QuickChatPanel)?.toggleMaximize()
         } else {
             window?.performDrag(with: event)
         }
+    }
+}
+
+/// Only control rectangles cross this bridge; the handler does not retain the panel or controller.
+@MainActor
+private final class HeaderControlsHandler: NSObject, WKScriptMessageHandler {
+    private weak var dragRegion: DraggableView?
+
+    init(_ dragRegion: DraggableView) { self.dragRegion = dragRegion }
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        let origin = message.frameInfo.securityOrigin
+        guard message.frameInfo.isMainFrame, origin.protocol == "https",
+              QuickChatController.isChatGPTHost(origin.host),
+              let rectangles = message.body as? [[Double]], let dragRegion else { return }
+        dragRegion.controls = rectangles.prefix(256).compactMap { rect in
+            guard rect.count == 4, rect.allSatisfy({ $0.isFinite }), rect[2] > 0, rect[3] > 0 else { return nil }
+            return NSRect(x: CGFloat(rect[0]), y: CGFloat(rect[1]), width: CGFloat(rect[2]), height: CGFloat(rect[3]))
+        }
+        dragRegion.isHidden = false
     }
 }

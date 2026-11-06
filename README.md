@@ -38,10 +38,10 @@ Two features, both off until you turn them on from the menu-bar icon. Your choic
 ### Quick Chat
 
 - A global shortcut (⌥Space by default; change it with **Change Shortcut…**) toggles a floating panel with chatgpt.com inside.
-- The panel is 420×560 by default, so chatgpt.com uses its compact layout. It has a native translucent background with no separate title bar or visible scrollbars; scrolling still works. The size and position are remembered.
-- Drag the empty middle of the top of the chat to move the panel. Double-click that area, or press ⌘F, to maximize or restore its size. ⌘O resets it to the default size.
+- The panel is 420×560 by default, so chatgpt.com uses its compact layout. It has a native translucent background with no separate title bar or visible scrollbars; scrolling still works. On the first launch it opens at the bottom-center of the display under the pointer. After that, the size and position are remembered.
+- Drag an empty area at the top of the chat to move the panel. Double-click that area, or press ⌘F, to maximize or restore its size. ⌘O resets it to the default size.
 - It stays on top of other windows, including full-screen apps, and doesn't hide when you click elsewhere. The shortcut, Esc or ⌘W hides it.
-- Reopening the panel returns to the conversation you left. Press ⌘N for a fresh conversation; the previous chat stays in your history.
+- Reopening the panel returns to the conversation you left. Press ⌘N to trigger ChatGPT’s New chat action without reloading the page; the previous chat stays in your history. The Chat / Work switch is hidden to save space.
 - Sign in once inside the panel. **Sign Out of Quick Chat** clears the panel's website data.
 - Voice works; macOS asks for microphone access the first time.
 - It doesn't need the ChatGPT desktop app. If the new app isn't installed, the Show Mini options are simply unavailable and the rest works the same.
