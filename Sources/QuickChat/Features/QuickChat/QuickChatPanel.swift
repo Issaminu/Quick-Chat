@@ -221,7 +221,7 @@ final class QuickChatController: NSObject {
            let version = Bundle(url: safariURL)?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
             config.applicationNameForUserAgent = "Version/\(version) Safari/605.1.15"
         }
-        let webView = WKWebView(frame: .zero, configuration: config)
+        let webView = PanelWebView(frame: .zero, configuration: config)
         webView.uiDelegate = self
         webView.navigationDelegate = self
         webView.allowsBackForwardNavigationGestures = true
@@ -853,6 +853,13 @@ final class HeaderButtons: NSView {
     }
 }
 
+/// The panel's web view. The panel does not activate the app, so it is often not the key window
+/// when you click it. The first click then goes to the page, as in a key window, so a single
+/// press on the title bar starts a drag and a single click works.
+final class PanelWebView: WKWebView {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 /// A borderless icon button like the page's title bar buttons: 36 pt, 8 pt corners, a light
 /// fill on hover. While active, it shows its active image (such as a filled icon).
 final class HeaderButton: NSButton {
@@ -891,6 +898,9 @@ final class HeaderButton: NSButton {
     required init?(coder: NSCoder) { fatalError() }
 
     @objc private func press() { onPress() }
+
+    /// One click works also while the panel is not the key window.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -971,6 +981,7 @@ final class LoadingView: NSVisualEffectView {
     }
 
     override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
 /// Page messages go to the controller; the handler does not retain it.

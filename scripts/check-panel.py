@@ -76,6 +76,7 @@ enum Check {
         check(abs(panel.frame.minX-(screen.visibleFrame.midX-panel.frame.width/2))<1 && abs(panel.frame.minY-(screen.visibleFrame.minY+32))<1,"fresh panel opens bottom-center")
         check(panel.frame.size==NSSize(width:440,height:540),"default dimensions match the reference popup")
         check(background.maskImage != nil,"window has a rounded shape, so its shadow follows the corners")
+        check(web.acceptsFirstMouse(for:nil) && buttons.close.acceptsFirstMouse(for:nil),"the first click on a panel that is not key reaches the page and the buttons")
 
         let locations:[(String,Bool,Bool)]=[("https://chatgpt.com/",false,false),("https://chatgpt.com/?temporary-chat=true",false,true),
             ("https://chatgpt.com/c/abc",true,false),("https://chatgpt.com/c/abc?temporary-chat=true",true,true),
