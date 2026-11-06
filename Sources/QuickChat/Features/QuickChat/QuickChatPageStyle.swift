@@ -130,10 +130,33 @@ enum QuickChatPageStyle {
         * { -webkit-font-smoothing: auto !important; }
         [data-app-action-timeline-scroll] :not(th, td, th *, td *) { --font-text-md-size: 15px !important; }
 
-        /* No scroll bars or scroll bar gutters, and no elastic stretch at the ends of a scroll. */
+        /* No toolbars on selected text: "Ask ChatGPT" on a message, and text formatting in the
+           composer. Both are floating boxes whose content is a toolbar of buttons
+           (role="presentation"); menus and other popovers have other content. */
+        [data-radix-popper-content-wrapper]:has(> [role="dialog"] > [role="presentation"]),
+        body > * > [style*="translateY(-100%)"]:has(> [role="presentation"] > button) { display: none !important; }
+
+        /* No elastic stretch at the ends of a scroll. Only the message list has a scroll bar: a thin
+           rounded thumb at the right edge, like a floating macOS scroll bar, from below the title
+           bar to the composer. WebKit draws it only while the list can scroll. */
         * { overscroll-behavior: none !important; }
-        *, *::before, *::after { scrollbar-width: none !important; scrollbar-gutter: auto !important; }
-        ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+        :not([data-app-action-timeline-scroll]), *::before, *::after { scrollbar-width: none !important; scrollbar-gutter: auto !important; }
+        :not([data-app-action-timeline-scroll])::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+        [data-app-action-timeline-scroll] { scrollbar-width: auto !important; scrollbar-color: auto !important; scrollbar-gutter: auto !important; }
+        [data-app-action-timeline-scroll]::-webkit-scrollbar { width: 10px; height: 0; background: transparent; }
+        [data-app-action-timeline-scroll]::-webkit-scrollbar-track {
+            background: transparent;
+            margin-top: var(--app-shell-titlebar-height, 52px);
+            margin-bottom: 4px;
+        }
+        [data-app-action-timeline-scroll]::-webkit-scrollbar-thumb {
+            border: 2px solid transparent;
+            border-right-width: 3px;
+            border-radius: 5px;
+            background-clip: padding-box;
+            background-color: color-mix(in srgb, CanvasText 45%, transparent);
+        }
+        [data-app-action-timeline-scroll]::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, CanvasText 60%, transparent); }
         """#
 
     /// Adds the style and a small bridge to the panel: window dragging from the empty title bar

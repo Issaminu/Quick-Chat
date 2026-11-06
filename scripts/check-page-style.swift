@@ -61,6 +61,9 @@ enum PageStyleCheck {
         </header>
         <div id="page"></div>
         </main></div><div role="menu" class="bg-surface">Menu</div>
+        <div><div id="ask-toolbar" style="position:fixed; top:100px; transform:translateX(0%) translateY(-100%)"><div role="presentation"><button>Ask</button><div aria-hidden="true"></div></div></div></div>
+        <div data-radix-popper-content-wrapper id="format-toolbar"><div role="dialog"><div role="presentation"><button aria-label="Link">L</button></div></div></div>
+        <div data-radix-popper-content-wrapper id="model-menu"><div role="menu"><div role="group">Model</div></div></div>
         <template id="home"><div role="main">
           <div id="hero"><h1 id="greeting">Any greeting</h1><p>Any description</p></div>
           <div id="composer-block"><div data-home-feed-composer class="contents">
@@ -120,7 +123,8 @@ enum PageStyleCheck {
                 'composer corners are concentric with the window': getComputedStyle(composer).borderTopLeftRadius === '12px',
                 'composer insets are 8 points': rect.left === 8 && innerWidth - rect.right === 8 && innerHeight - rect.bottom === 8,
                 'primary button is white with a black icon': getComputedStyle(send).backgroundColor === 'rgb(255, 255, 255)' && getComputedStyle(send).color === 'rgb(0, 0, 0)',
-                'menus keep their fill': alpha(style('[role="menu"]').backgroundColor) === 255
+                'menus keep their fill': alpha(style('[role="menu"]').backgroundColor) === 255,
+                'selection toolbars are hidden, menus are not': !shown($('#ask-toolbar')) && !shown($('#format-toolbar')) && shown($('#model-menu'))
             };
             if ($('#hero')) {
                 result['greeting and notices are hidden'] = !shown($('#hero')) && !shown($('#greeting')) && !shown($('#notice'));
@@ -130,6 +134,8 @@ enum PageStyleCheck {
                 result['messages end at the composer top'] = Math.abs(scroller.getBoundingClientRect().bottom - rect.top) < 1;
                 result['messages fade with the scroll position'] = getComputedStyle(content).maskImage.includes('gradient') &&
                     getComputedStyle(content).animationName === 'quick-chat-follow-scroll';
+                result['message list has a thin scroll bar while it can scroll'] =
+                    scroller.offsetWidth - scroller.clientWidth === (scroller.scrollHeight > scroller.clientHeight ? 10 : 0);
                 result['scroll-to-bottom button keeps its fill'] = alpha(style('#scroll-down').backgroundColor) === 255;
                 if (scroller.scrollHeight <= scroller.clientHeight) {
                     result['mask starts at the top of the visible area'] = getComputedStyle(content).maskPosition.endsWith('-32px');
