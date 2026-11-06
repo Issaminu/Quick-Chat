@@ -9,6 +9,8 @@ import Foundation
 enum QuickChatPageStyle {
     static let windowCornerRadius = 20
     static let composerInset = 8
+    /// The panel's own title bar buttons: 36 pt, 8 pt from the window edges, like the page's buttons.
+    static let titleBarButtonSize = 36
     /// Focuses the rendered message editor (the page keeps hidden copies of earlier pages).
     static let focusComposerScript = """
         [...document.querySelectorAll('form[data-chatgpt-composer] [contenteditable="true"], #prompt-textarea')]
@@ -39,6 +41,10 @@ enum QuickChatPageStyle {
             & [data-app-shell-header-slot="start"] [data-app-shell-header-slot-content] > :not(:has([aria-controls])) { display: none !important; }
         }
         header[data-app-shell-titlebar] .bg-surface { background-color: transparent !important; }
+        /* The panel's close button sits at the top left, so the sidebar button moves to its right. */
+        header[data-app-shell-titlebar] [data-app-shell-header-slot="start"] [data-app-shell-header-slot-content] {
+            margin-inline-start: \#(titleBarButtonSize + composerInset)px !important;
+        }
 
         /* Empty chat: only the composer. This hides every greeting, suggestion, and notice around it.
            Content before the composer keeps its space, so the composer stays at the bottom; content
@@ -111,7 +117,13 @@ enum QuickChatPageStyle {
             animation-timeline: --quick-chat-thread;
         }
 
-        /* No scroll bars or scroll bar gutters. */
+        /* Text looks like native text: the system's font smoothing, and 15-point message text like
+           ChatGPT's own companion window. Table text keeps its smaller size. */
+        * { -webkit-font-smoothing: auto !important; }
+        [data-app-action-timeline-scroll] :not(th, td, th *, td *) { --font-text-md-size: 15px !important; }
+
+        /* No scroll bars or scroll bar gutters, and no elastic stretch at the ends of a scroll. */
+        * { overscroll-behavior: none !important; }
         *, *::before, *::after { scrollbar-width: none !important; scrollbar-gutter: auto !important; }
         ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
         """#
@@ -143,10 +155,11 @@ enum QuickChatPageStyle {
                 post({ type: event.detail === 2 ? "zoom" : "drag" });
             }, true);
 
-            // The panel's buttons sit at the top right of a chat page's title bar (the signed-in
-            // pages with a composer). They hide while something covers that corner (the sidebar, a
-            // menu, a dialog) and on other pages, which have their own buttons there. They follow
-            // the page's light or dark theme.
+            // The panel's close button sits at the top left of the page's title bar, and its other
+            // buttons at the top right of a chat page's title bar (the signed-in pages with a
+            // composer). Each hides while something covers its corner (the sidebar, a menu, a
+            // dialog). Other pages have their own buttons at the top right. The buttons follow the
+            // page's light or dark theme.
             const covered = (x, y) => {
                 const element = document.elementFromPoint(x, y);
                 return !!element && element !== document.documentElement && element !== document.body &&
@@ -158,10 +171,11 @@ enum QuickChatPageStyle {
                 pending = false;
                 // Until the page's own style loads, it has no color scheme; the panel then keeps its theme.
                 const scheme = getComputedStyle(document.documentElement).colorScheme;
+                const titleBar = !!document.querySelector("header[data-app-shell-titlebar]");
                 const state = {
                     type: "state",
-                    buttons: !!document.querySelector('[data-app-shell-active-page="true"] form[data-chatgpt-composer]') &&
-                        !!document.querySelector("header[data-app-shell-titlebar]") &&
+                    close: titleBar && !covered(26, 26),
+                    buttons: titleBar && !!document.querySelector('[data-app-shell-active-page="true"] form[data-chatgpt-composer]') &&
                         !covered(innerWidth - 26, 26) && !covered(innerWidth - 70, 26),
                     dark: scheme === "normal" ? null : scheme.includes("dark")
                 };

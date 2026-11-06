@@ -30,8 +30,8 @@ enum Check {
         while Date()<end { if await condition() { return }; try? await Task.sleep(for:.milliseconds(100)) }
     }
     static func visible(_ buttons:HeaderButtons) -> [String] {
-        buttons.isHidden ? [] : [(buttons.openInBrowser,"open"),(buttons.temporaryChat,"temporary"),(buttons.newChat,"new")]
-            .filter{!$0.0.isHidden}.map{$0.1}
+        [(buttons.close,"close"),(buttons.openInBrowser,"open"),(buttons.temporaryChat,"temporary"),(buttons.newChat,"new")]
+            .filter{!$0.0.isHiddenOrHasHiddenAncestor}.map{$0.1}
     }
     /// Layout facts about the rendered page (the page keeps hidden copies of earlier pages).
     static let measure = """
@@ -52,7 +52,10 @@ enum Check {
             composerAlpha: alpha(getComputedStyle(rendered('[data-composer-layout][data-composer-surface-variant]') || body).backgroundColor) + alpha(getComputedStyle(body).backgroundColor),
             pageAlpha: alpha(getComputedStyle(document.body).backgroundColor) + alpha(getComputedStyle(rendered('main[data-app-shell-main-surface]') || document.body).backgroundColor),
             headerButtons: [...document.querySelectorAll('header[data-app-shell-titlebar] button')].filter(shown).length,
-            sidebarButton: !!rendered('header[data-app-shell-titlebar] button[aria-controls]'),
+            sidebarButton: rendered('header[data-app-shell-titlebar] button[aria-controls]')?.getBoundingClientRect().left ?? null,
+            smoothing: getComputedStyle(body).webkitFontSmoothing,
+            overscroll: getComputedStyle(scroller || document.documentElement).overscrollBehaviorY,
+            textSize: scroller ? getComputedStyle(scroller.firstElementChild).getPropertyValue('--font-text-md-size').trim() : null,
             textOutsideComposer: text.map(e => e.textContent.trim().slice(0, 30)).slice(0, 5),
             gap: scroller ? Math.round(r.top - scroller.getBoundingClientRect().bottom) : null,
             mask: scroller ? getComputedStyle(scroller.firstElementChild).animationName : null,
@@ -70,12 +73,16 @@ enum Check {
         let composerAlpha=m["composerAlpha"] as? Int ?? 0
         check(composerAlpha > 0 && composerAlpha < 80,"\(state): composer is translucent",composerAlpha)
         check(m["pageAlpha"] as? Int == 0,"\(state): page background is transparent",m["pageAlpha"]!)
-        check(m["sidebarButton"] as? Bool == true && m["headerButtons"] as? Int == 1,"\(state): title bar shows only the sidebar button",m["headerButtons"]!)
+        check(m["headerButtons"] as? Int == 1,"\(state): title bar shows only the sidebar button",m["headerButtons"]!)
+        check(m["sidebarButton"] as? Double == 52,"\(state): sidebar button sits right of the panel's close button",m["sidebarButton"]!)
+        check(m["smoothing"] as? String == "auto","\(state): text uses the system's font smoothing",m["smoothing"]!)
+        check(m["overscroll"] as? String == "none","\(state): scrolling does not stretch at the ends",m["overscroll"]!)
         if empty {
             check((m["textOutsideComposer"] as? [String])?.isEmpty == true,"\(state): no greeting or notice text",m["textOutsideComposer"]!)
         } else {
             check(m["gap"] as? Int == 0,"\(state): messages end at the composer top",m["gap"]!)
             check(m["mask"] as? String == "quick-chat-follow-scroll","\(state): messages fade above the composer",m["mask"]!)
+            check(m["textSize"] as? String == "15px","\(state): message text is 15 points",m["textSize"]!)
         }
     }
     static func run() async {
@@ -92,14 +99,14 @@ enum Check {
         }
         try? await Task.sleep(for:.seconds(1))
         await checkLayout(web,"empty chat",empty:true)
-        check(visible(buttons)==["open","temporary"],"empty chat: panel shows Open in Browser and Temporary Chat",await js(web,"return [document.elementFromPoint(innerWidth - 26, 26), document.elementFromPoint(innerWidth - 70, 26)].map(e => e?.outerHTML.slice(0, 160)).join(' | ') + ' active:' + !!document.querySelector('[data-app-shell-active-page=\"true\"] form[data-chatgpt-composer]')") as Any)
+        check(visible(buttons)==["close","temporary"],"empty chat: panel shows Close and Temporary Chat",await js(web,"return [document.elementFromPoint(innerWidth - 26, 26), document.elementFromPoint(innerWidth - 70, 26)].map(e => e?.outerHTML.slice(0, 160)).join(' | ') + ' active:' + !!document.querySelector('[data-app-shell-active-page=\"true\"] form[data-chatgpt-composer]')") as Any)
 
         buttons.temporaryChat.performClick(nil)
         await wait(10) { QuickChatLocation(web.url).isTemporary }
         try? await Task.sleep(for:.seconds(1))
         check(QuickChatLocation(web.url).isTemporary,"Temporary Chat starts a temporary chat",web.url as Any)
         await checkLayout(web,"temporary chat",empty:true)
-        check(visible(buttons)==["temporary"],"temporary chat: panel shows only Temporary Chat",visible(buttons))
+        check(visible(buttons)==["close","temporary"],"temporary chat: panel shows Close and Temporary Chat",visible(buttons))
         buttons.temporaryChat.performClick(nil)
         await wait(10) { !QuickChatLocation(web.url).isTemporary }
         check(!QuickChatLocation(web.url).isTemporary,"Temporary Chat again leaves the temporary chat",web.url as Any)
@@ -127,7 +134,7 @@ enum Check {
             }
             try? await Task.sleep(for:.seconds(2))
             await checkLayout(web,"conversation",empty:false)
-            check(visible(buttons)==["open","new"],"conversation: panel shows Open in Browser and New Chat",visible(buttons))
+            check(visible(buttons)==["close","open","new"],"conversation: panel shows Close, Open in Browser and New Chat",visible(buttons))
             panel.sendEvent(NSEvent.keyEvent(with:.keyDown,location:.zero,modifierFlags:.command,timestamp:0,windowNumber:panel.windowNumber,context:nil,characters:"n",charactersIgnoringModifiers:"n",isARepeat:false,keyCode:45)!)
             await wait(10) { !QuickChatLocation(web.url).isConversation }
             check(!QuickChatLocation(web.url).isConversation,"Command-N starts a new chat",web.url as Any)

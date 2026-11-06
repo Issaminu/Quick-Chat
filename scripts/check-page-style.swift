@@ -110,7 +110,9 @@ enum PageStyleCheck {
             const send = composer.querySelector('.send');
             const result = {
                 'page surfaces are transparent': ['html', 'body', 'main'].every(s => alpha(style(s).backgroundColor) === 0),
-                'sidebar button stays at the top left': shown($('#sidebar-button')) && $('#sidebar-button').getBoundingClientRect().x === 8,
+                'sidebar button sits right of the panel close button': shown($('#sidebar-button')) && $('#sidebar-button').getBoundingClientRect().x === 52,
+                'text uses the system font smoothing': getComputedStyle(composer).webkitFontSmoothing === 'auto',
+                'scrolling does not stretch at the ends': getComputedStyle(document.documentElement).overscrollBehaviorY === 'none',
                 'header has no other page buttons': !shown($('#header-new-chat')) && !shown($('#temporary')) && !shown($('#title')),
                 'header buttons have no fill': alpha(getComputedStyle($('#sidebar-button').parentElement).backgroundColor) === 0,
                 'composer is translucent': alpha(getComputedStyle(composer).backgroundColor) > 0 && alpha(getComputedStyle(composer).backgroundColor) < 40,
@@ -129,6 +131,7 @@ enum PageStyleCheck {
                 result['messages fade with the scroll position'] = getComputedStyle(content).maskImage.includes('gradient') &&
                     getComputedStyle(content).animationName === 'quick-chat-follow-scroll';
                 result['scroll-to-bottom button keeps its fill'] = alpha(style('#scroll-down').backgroundColor) === 255;
+                result['message text is 15 points'] = getComputedStyle(content).getPropertyValue('--font-text-md-size').trim() === '15px';
                 result['disclaimer is hidden and takes no space'] = $('#disclaimer').getClientRects().length === 0;
                 result['opaque composer backdrop is hidden'] = !shown($('[data-thread-scroll-footer] > [aria-hidden]'));
             }

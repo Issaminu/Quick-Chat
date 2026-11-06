@@ -51,14 +51,17 @@ enum Check {
     document.querySelector('#home').onclick=event=>{event.preventDefault();clicks.home++};
     </script></body></html>
     """
-    static func check(_ pass:Bool,_ label:String) { print("\(pass ? "PASS" : "FAIL") \(label)"); if !pass { failures += 1 } }
+    static func check(_ pass:Bool,_ label:String,_ detail:Any? = nil) {
+        print("\(pass ? "PASS" : "FAIL") \(label)\(pass || detail == nil ? "" : " (\(detail!))")")
+        if !pass { failures += 1 }
+    }
     static func wait(_ condition:@escaping @MainActor () async ->Bool) async {
         for _ in 0..<100 { if await condition() { return }; try? await Task.sleep(for:.milliseconds(50)) }
     }
     static func js(_ web:WKWebView,_ code:String) async -> Any? { try? await web.evaluateJavaScript(code) }
     static func visible(_ buttons:HeaderButtons) -> [String] {
-        buttons.isHidden ? [] : [(buttons.openInBrowser,"open"),(buttons.temporaryChat,"temporary"),(buttons.newChat,"new")]
-            .filter{!$0.0.isHidden}.map{$0.1}
+        [(buttons.close,"close"),(buttons.openInBrowser,"open"),(buttons.temporaryChat,"temporary"),(buttons.newChat,"new")]
+            .filter{!$0.0.isHiddenOrHasHiddenAncestor}.map{$0.1}
     }
     static func run() async {
         let controller=QuickChatController()
@@ -79,24 +82,25 @@ enum Check {
         check(locations.allSatisfy{let l=QuickChatLocation(URL(string:$0.0)); return l.isChatGPT && l.isConversation==$0.1 && l.isTemporary==$0.2},"addresses are read as empty chat or conversation, temporary or not")
         check(!QuickChatLocation(URL(string:"https://auth.openai.com/log-in")).isChatGPT,"other sites are not ChatGPT")
 
-        await wait { !buttons.isHidden }
-        check(visible(buttons)==["open","new"],"conversation shows Open in Browser and New Chat")
+        await wait { visible(buttons).count==3 }
+        check(visible(buttons)==["close","open","new"],"conversation shows Close, Open in Browser and New Chat",visible(buttons))
         buttons.update(for:URL(string:"https://chatgpt.com/"))
-        check(visible(buttons)==["open","temporary"],"empty chat shows Open in Browser and Temporary Chat")
+        check(visible(buttons)==["close","temporary"],"empty chat shows Close and Temporary Chat",visible(buttons))
         buttons.update(for:URL(string:"https://chatgpt.com/?temporary-chat=true"))
-        check(visible(buttons)==["temporary"] && buttons.temporaryChat.isActive,"temporary empty chat shows only an active Temporary Chat")
+        check(visible(buttons)==["close","temporary"] && buttons.temporaryChat.isActive,"temporary empty chat shows Close and an active Temporary Chat")
         buttons.update(for:URL(string:"https://chatgpt.com/c/abc?temporary-chat=true"))
-        check(visible(buttons)==["new"],"temporary conversation shows only New Chat")
+        check(visible(buttons)==["close","new"],"temporary conversation shows Close and New Chat")
         buttons.update(for:URL(string:"https://auth.openai.com/log-in"))
-        check(buttons.isHidden,"buttons hide on other sites")
+        check(visible(buttons).isEmpty,"buttons hide on other sites")
+        check(buttons.hitTest(NSPoint(x:200,y:20)) == nil,"the title bar between the buttons belongs to the page")
         buttons.update(for:web.url)
 
         _=await js(web,"document.body.insertAdjacentHTML('beforeend','<div id=\"dialog\" role=\"dialog\" style=\"position:fixed;inset:0;background:#000\"></div>')")
-        await wait { buttons.isHidden }
-        check(buttons.isHidden,"buttons hide while a dialog or the sidebar covers their corner")
+        await wait { visible(buttons).isEmpty }
+        check(visible(buttons).isEmpty,"buttons hide while a dialog or the sidebar covers their corner")
         _=await js(web,"document.querySelector('#dialog').remove()")
-        await wait { !buttons.isHidden }
-        check(!buttons.isHidden,"buttons come back when the corner is clear")
+        await wait { visible(buttons).count==3 }
+        check(visible(buttons).count==3,"buttons come back when the corner is clear")
 
         let spy=NavigationSpy()
         web.navigationDelegate=spy
@@ -129,6 +133,9 @@ enum Check {
         await wait { !panel.isMaximized && panel.frame==frame }
         check(!panel.isMaximized && panel.frame==frame,"another double press restores the frame")
 
+        buttons.close.performClick(nil)
+        check(!panel.isVisible,"Close hides the panel")
+        controller.show()
         panel.cancelOperation(nil)
         check(!panel.isVisible,"Escape action hides the panel")
         controller.show()

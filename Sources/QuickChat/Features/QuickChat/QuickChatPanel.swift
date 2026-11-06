@@ -121,6 +121,7 @@ final class QuickChatController: NSObject {
         let webView = makeWebView()
         webView.configuration.userContentController.add(PageMessageHandler(self), name: "quickChat")
         let headerButtons = HeaderButtons()
+        headerButtons.onClose = { [weak self] in self?.hide(restoreFocus: true) }
         headerButtons.onOpenInBrowser = { [weak self] in self?.openInBrowser() }
         headerButtons.onTemporaryChat = { [weak self] in self?.toggleTemporaryChat() }
         headerButtons.onNewChat = { [weak self] in self?.newConversation() }
@@ -128,14 +129,14 @@ final class QuickChatController: NSObject {
             view.translatesAutoresizingMaskIntoConstraints = false
             background.addSubview(view)
         }
-        // The buttons line up with the page's sidebar button: 8 pt from the edges, 36 pt tall.
         NSLayoutConstraint.activate([
             webView.leadingAnchor.constraint(equalTo: background.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: background.trailingAnchor),
             webView.topAnchor.constraint(equalTo: background.topAnchor),
             webView.bottomAnchor.constraint(equalTo: background.bottomAnchor),
-            headerButtons.trailingAnchor.constraint(equalTo: background.trailingAnchor, constant: -8),
-            headerButtons.topAnchor.constraint(equalTo: background.topAnchor, constant: 8),
+            headerButtons.leadingAnchor.constraint(equalTo: background.leadingAnchor),
+            headerButtons.trailingAnchor.constraint(equalTo: background.trailingAnchor),
+            headerButtons.topAnchor.constraint(equalTo: background.topAnchor),
         ])
         panel.contentView = background
 
@@ -282,6 +283,7 @@ final class QuickChatController: NSObject {
         case "zoom":
             panel?.toggleMaximize()
         case "state":
+            headerButtons?.isCloseAllowed = message["close"] as? Bool ?? false
             headerButtons?.isAllowed = message["buttons"] as? Bool ?? false
             pageIsDark = message["dark"] as? Bool
             updateAppearance()
@@ -640,40 +642,65 @@ struct QuickChatLocation {
     }
 }
 
-/// The panel's title bar buttons at the top right:
-/// - Empty chat: Open in Browser, Temporary Chat.
+/// The panel's title bar buttons, in line with the page's sidebar button. Close is at the top
+/// left, before the sidebar button. At the top right:
+/// - Empty chat: Temporary Chat.
 /// - Conversation: Open in Browser, New Chat.
-/// - Temporary chats have no Open in Browser, as the browser cannot show them.
-final class HeaderButtons: NSStackView {
+/// - Temporary conversation: New Chat. The browser cannot show a temporary chat.
+/// The view spans the title bar, but only its buttons take clicks; the rest goes to the page.
+final class HeaderButtons: NSView {
+    var onClose: (() -> Void)?
     var onOpenInBrowser: (() -> Void)?
     var onTemporaryChat: (() -> Void)?
     var onNewChat: (() -> Void)?
-    /// The page has room for the buttons: it is the signed-in page, and nothing (the sidebar, a
-    /// menu, a dialog) covers this corner.
+    /// Nothing (the sidebar, a menu, a dialog) covers the top left of the page's title bar.
+    var isCloseAllowed = false { didSet { updateVisibility() } }
+    /// The page has room for the buttons at the top right: it is a signed-in chat page, and
+    /// nothing covers this corner.
     var isAllowed = false { didSet { updateVisibility() } }
 
+    private(set) var close: HeaderButton!
     private(set) var openInBrowser: HeaderButton!
     private(set) var temporaryChat: HeaderButton!
     private(set) var newChat: HeaderButton!
+    private let trailingButtons = NSStackView()
     private var location = QuickChatLocation(nil)
 
     init() {
         super.init(frame: .zero)
-        orientation = .horizontal
-        spacing = 8
-        openInBrowser = HeaderButton(image: Self.symbol("arrow.up.right.square"), label: "Open in Browser") { [weak self] in self?.onOpenInBrowser?() }
+        close = HeaderButton(image: Self.symbol("xmark.circle.fill"), label: "Close Quick Chat (Esc)", showsFill: false) { [weak self] in self?.onClose?() }
+        openInBrowser = HeaderButton(image: Self.openInBrowserImage, label: "Open in Browser") { [weak self] in self?.onOpenInBrowser?() }
         temporaryChat = HeaderButton(image: Self.temporaryChatImage, label: "Temporary Chat") { [weak self] in self?.onTemporaryChat?() }
-        newChat = HeaderButton(image: Self.symbol("square.and.pencil"), label: "New Chat (⌘N)") { [weak self] in self?.onNewChat?() }
-        for button in [openInBrowser!, temporaryChat!, newChat!] { addArrangedSubview(button) }
+        newChat = HeaderButton(image: Self.newChatImage, label: "New Chat (⌘N)") { [weak self] in self?.onNewChat?() }
+        trailingButtons.orientation = .horizontal
+        trailingButtons.spacing = 8
+        for button in [openInBrowser!, temporaryChat!, newChat!] { trailingButtons.addArrangedSubview(button) }
+        for view in [close!, trailingButtons] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(view)
+        }
+        let inset = CGFloat(QuickChatPageStyle.composerInset)
+        NSLayoutConstraint.activate([
+            close.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
+            close.topAnchor.constraint(equalTo: topAnchor, constant: inset),
+            trailingButtons.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
+            trailingButtons.topAnchor.constraint(equalTo: topAnchor, constant: inset),
+            heightAnchor.constraint(equalToConstant: CGFloat(QuickChatPageStyle.titleBarButtonSize) + inset * 2),
+        ])
         update(for: nil)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let view = super.hitTest(point)
+        return view === self || view === trailingButtons ? nil : view
+    }
+
     func update(for url: URL?) {
         location = QuickChatLocation(url)
-        openInBrowser.isHidden = location.isTemporary
+        openInBrowser.isHidden = !location.isConversation || location.isTemporary
         temporaryChat.isHidden = location.isConversation
         temporaryChat.isActive = location.isTemporary
         newChat.isHidden = !location.isConversation
@@ -681,7 +708,8 @@ final class HeaderButtons: NSStackView {
     }
 
     private func updateVisibility() {
-        isHidden = !location.isChatGPT || !isAllowed
+        close.isHidden = !location.isChatGPT || !isCloseAllowed
+        trailingButtons.isHidden = !location.isChatGPT || !isAllowed
     }
 
     private static func symbol(_ name: String) -> NSImage {
@@ -689,40 +717,94 @@ final class HeaderButtons: NSStackView {
         return image.withSymbolConfiguration(.init(pointSize: 15, weight: .regular)) ?? image
     }
 
-    /// A speech bubble with a dashed outline, like ChatGPT's temporary chat icon.
-    private static let temporaryChatImage: NSImage = {
+    private static func templateImage(_ draw: @escaping () -> Void) -> NSImage {
         let image = NSImage(size: NSSize(width: 20, height: 20), flipped: true) { _ in
             NSColor.black.setStroke()
-            let bubble = NSBezierPath()
-            bubble.appendArc(withCenter: NSPoint(x: 10.5, y: 9.5), radius: 7, startAngle: 140, endAngle: 470)
-            bubble.lineWidth = 1.6
-            bubble.lineCapStyle = .round
-            bubble.setLineDash([3.1, 2.6], count: 2, phase: 0)
-            bubble.stroke()
-            let tail = NSBezierPath()
-            tail.move(to: NSPoint(x: 5.2, y: 14.1))
-            tail.line(to: NSPoint(x: 3.2, y: 17.2))
-            tail.line(to: NSPoint(x: 7.2, y: 16.2))
-            tail.lineWidth = 1.6
-            tail.lineCapStyle = .round
-            tail.lineJoinStyle = .round
-            tail.stroke()
+            draw()
             return true
         }
         image.isTemplate = true
         return image
-    }()
+    }
+
+    private static func stroke(_ path: NSBezierPath) {
+        path.lineWidth = 1.5
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        path.stroke()
+    }
+
+    /// A window frame with a small window in its corner, like the companion window's
+    /// "open in the main window" icon.
+    private static let openInBrowserImage = templateImage {
+        let frame = NSBezierPath()
+        frame.move(to: NSPoint(x: 17, y: 8))
+        frame.appendArc(withCenter: NSPoint(x: 13.5, y: 6.5), radius: 3.5, startAngle: 0, endAngle: -90, clockwise: true)
+        frame.appendArc(withCenter: NSPoint(x: 6.5, y: 6.5), radius: 3.5, startAngle: -90, endAngle: -180, clockwise: true)
+        frame.appendArc(withCenter: NSPoint(x: 6.5, y: 13.5), radius: 3.5, startAngle: 180, endAngle: 90, clockwise: true)
+        frame.line(to: NSPoint(x: 8, y: 17))
+        stroke(frame)
+        let corner = NSBezierPath()
+        corner.move(to: NSPoint(x: 6.5, y: 10))
+        corner.appendArc(withCenter: NSPoint(x: 8, y: 8), radius: 1.5, startAngle: 180, endAngle: 270)
+        corner.line(to: NSPoint(x: 10, y: 6.5))
+        stroke(corner)
+        stroke(NSBezierPath(roundedRect: NSRect(x: 10, y: 10, width: 7, height: 7), xRadius: 1.75, yRadius: 1.75))
+    }
+
+    /// A square, open at the top right, with a pencil, like the companion window's new chat icon.
+    private static let newChatImage = templateImage {
+        let square = NSBezierPath()
+        square.move(to: NSPoint(x: 9.5, y: 3))
+        square.appendArc(withCenter: NSPoint(x: 6.5, y: 6.5), radius: 3.5, startAngle: -90, endAngle: -180, clockwise: true)
+        square.appendArc(withCenter: NSPoint(x: 6.5, y: 13.5), radius: 3.5, startAngle: 180, endAngle: 90, clockwise: true)
+        square.appendArc(withCenter: NSPoint(x: 13.5, y: 13.5), radius: 3.5, startAngle: 90, endAngle: 0, clockwise: true)
+        square.line(to: NSPoint(x: 17, y: 10.5))
+        stroke(square)
+        // The pencil points to the lower left; it is drawn along the x axis, then turned up 45°.
+        let pencil = NSBezierPath()
+        pencil.move(to: .zero)
+        pencil.line(to: NSPoint(x: 2.4, y: -1.6))
+        pencil.appendArc(withCenter: NSPoint(x: 9.6, y: 0), radius: 1.6, startAngle: -90, endAngle: 90)
+        pencil.line(to: NSPoint(x: 2.4, y: 1.6))
+        pencil.close()
+        let place = AffineTransform(translationByX: 7, byY: 13)
+        var turn = AffineTransform(rotationByDegrees: -45)
+        turn.append(place)
+        pencil.transform(using: turn)
+        stroke(pencil)
+    }
+
+    /// A speech bubble with a dashed outline, like ChatGPT's temporary chat icon.
+    private static let temporaryChatImage = templateImage {
+        let bubble = NSBezierPath()
+        bubble.appendArc(withCenter: NSPoint(x: 10.5, y: 9.5), radius: 7, startAngle: 140, endAngle: 470)
+        bubble.lineWidth = 1.6
+        bubble.lineCapStyle = .round
+        bubble.setLineDash([3.1, 2.6], count: 2, phase: 0)
+        bubble.stroke()
+        let tail = NSBezierPath()
+        tail.move(to: NSPoint(x: 5.2, y: 14.1))
+        tail.line(to: NSPoint(x: 3.2, y: 17.2))
+        tail.line(to: NSPoint(x: 7.2, y: 16.2))
+        tail.lineWidth = 1.6
+        tail.lineCapStyle = .round
+        tail.lineJoinStyle = .round
+        tail.stroke()
+    }
 }
 
 /// A borderless icon button like the page's title bar buttons: 36 pt, 8 pt corners, a light
-/// fill on hover and while active.
+/// fill on hover and while active. Without the fill, the icon gets brighter on hover.
 final class HeaderButton: NSButton {
     private let onPress: () -> Void
+    private let showsFill: Bool
     private var isHovered = false { didSet { updateFill() } }
     var isActive = false { didSet { updateFill() } }
 
-    init(image: NSImage, label: String, onPress: @escaping () -> Void) {
+    init(image: NSImage, label: String, showsFill: Bool = true, onPress: @escaping () -> Void) {
         self.onPress = onPress
+        self.showsFill = showsFill
         super.init(frame: .zero)
         self.image = image
         imagePosition = .imageOnly
@@ -735,7 +817,8 @@ final class HeaderButton: NSButton {
         wantsLayer = true
         layer?.cornerRadius = 8
         translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([widthAnchor.constraint(equalToConstant: 36), heightAnchor.constraint(equalToConstant: 36)])
+        let size = CGFloat(QuickChatPageStyle.titleBarButtonSize)
+        NSLayoutConstraint.activate([widthAnchor.constraint(equalToConstant: size), heightAnchor.constraint(equalToConstant: size)])
     }
 
     @available(*, unavailable)
@@ -759,9 +842,9 @@ final class HeaderButton: NSButton {
 
     private func updateFill() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            let alpha: CGFloat = isActive ? 0.14 : isHovered ? 0.08 : 0
+            let alpha: CGFloat = !showsFill ? 0 : isActive ? 0.14 : isHovered ? 0.08 : 0
             layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(alpha).cgColor
-            contentTintColor = isActive ? .labelColor : .secondaryLabelColor
+            contentTintColor = isActive || (isHovered && !showsFill) ? .labelColor : .secondaryLabelColor
         }
     }
 }
