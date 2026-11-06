@@ -95,8 +95,12 @@ enum QuickChatPageStyle {
         /* While the composer's text overflows, space below the last line lets it scroll above the
            text area's bottom fade. */
         form[data-chatgpt-composer] [data-rich-text-layout][data-overflowing] > [contenteditable="true"] { padding-bottom: 16px !important; }
-        /* The composer's own Expand control: it does not fit in the panel (the panel has Expand). */
+        /* The composer's own Expand control: it does not fit in the panel (the panel has Expand).
+           The text no longer keeps space free for it. */
         form[data-chatgpt-composer] [data-composer-expansion-control] { display: none !important; }
+        form[data-chatgpt-composer] [data-rich-text-layout="multiline"] { padding-right: 0 !important; }
+        /* The scroll bar of a long draft sits in the right margin, so the text keeps equal margins. */
+        form[data-chatgpt-composer] [data-rich-text-layout][data-overflowing] { margin-right: -10px !important; }
 
         /* The same small inset left, right, and below the composer, before and after the first message. */
         :is([role="main"], [role="main"] *):has(form[data-composer-placement="home"]) {
