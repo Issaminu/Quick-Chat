@@ -10,7 +10,12 @@ import tempfile
 repo=Path(__file__).resolve().parents[1]
 root=Path(tempfile.mkdtemp(prefix='quickchat-live-check-'))
 source=repo/'Sources/QuickChat/Features/QuickChat/QuickChatPanel.swift'
-(root/'QuickChatPanel.swift').write_text(source.read_text().replace('private func makePanel()', 'func makePanel()'))
+panel=source.read_text().replace('private func makePanel()', 'func makePanel()')
+# The check must not change Quick Chat's quit flag or clear your drafts.
+for old, new in (('defaults.set(false, forKey: key)', ''), ('return quitNormally', 'return false')):
+    assert panel.count(old) == 1, old
+    panel = panel.replace(old, new)
+(root/'QuickChatPanel.swift').write_text(panel)
 (root/'main.swift').write_text(r'''
 import AppKit
 import WebKit
@@ -103,6 +108,8 @@ enum Check {
         panel.setFrame(NSRect(origin:savedFrame.origin,size:QuickChatPanel.defaultSize),display:true)
         try? await Task.sleep(for:.seconds(1))
         await checkLayout(web,"empty chat",empty:true)
+        let toggle="return [...document.querySelectorAll('header button:has(use[href*=\"chat-bubble\"][href*=\"dashed\"])')].some(e => e.getClientRects().length)"
+        check((await js(web,toggle)) as? Bool == true,"empty chat: the page's Temporary Chat toggle has its icon hook")
         check(visible(buttons)==["close","sidebar","expand","temporary"],"empty chat: panel shows Close, Sidebar, Expand and Temporary Chat",await js(web,"return [document.elementFromPoint(innerWidth - 26, 26), document.elementFromPoint(innerWidth - 70, 26)].map(e => e?.outerHTML.slice(0, 160)).join(' | ') + ' active:' + !!document.querySelector('[data-app-shell-active-page=\"true\"] form[data-chatgpt-composer]')") as Any)
         // A wide window: the page centers its content and docks the sidebar rail. The panel's
         // own frame is put back afterwards, as this check uses Quick Chat's saved settings.
@@ -127,6 +134,7 @@ enum Check {
         check(QuickChatLocation(web.url).isTemporary,"Temporary Chat starts a temporary chat",web.url as Any)
         await checkLayout(web,"temporary chat",empty:true)
         check(visible(buttons)==["close","sidebar","expand","temporary"],"temporary chat: panel shows Close, Sidebar, Expand and Temporary Chat",visible(buttons))
+        check((await js(web,toggle)) as? Bool == true,"temporary chat: the page's toggle has its icon hook")
         buttons.temporaryChat.performClick(nil)
         await wait(10) { !QuickChatLocation(web.url).isTemporary }
         check(!QuickChatLocation(web.url).isTemporary,"Temporary Chat again leaves the temporary chat",web.url as Any)
@@ -155,6 +163,27 @@ enum Check {
             try? await Task.sleep(for:.seconds(2))
             await checkLayout(web,"conversation",empty:false)
             check(visible(buttons)==["close","sidebar","expand","new"],"conversation: panel shows Close, Sidebar, Expand and New Chat",visible(buttons))
+            // Selected message text: the page's "Ask ChatGPT" toolbar must stay hidden.
+            let toolbar=await js(web,"""
+                const rendered = selector => [...document.querySelectorAll(selector)].find(e => e.getClientRects().length);
+                const scroller = rendered('[data-app-action-timeline-scroll]');
+                const area = scroller?.getBoundingClientRect();
+                // The page shows its toolbar only for text that is on screen.
+                const text = [...(scroller?.querySelectorAll('p') ?? [])].find(e => { const r = e.getBoundingClientRect(); return e.textContent.trim().length > 20 && r.top > area.top + 60 && r.bottom < area.bottom; });
+                if (!text) return "no message text on screen";
+                const range = document.createRange(); range.selectNodeContents(text);
+                getSelection().removeAllRanges(); getSelection().addRange(range);
+                const box = text.getBoundingClientRect();
+                for (const type of ["pointerdown", "mousedown", "pointerup", "mouseup"]) text.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: box.right - 4, clientY: box.bottom - 4 }));
+                await new Promise(resolve => setTimeout(resolve, 800));
+                const toolbars = [...document.querySelectorAll('[role="presentation"]')].filter(e => e.querySelector(':scope > button') && getComputedStyle(e.closest('[style*="fixed"], .fixed, [data-radix-popper-content-wrapper]') ?? e).position === 'fixed');
+                const shown = toolbars.filter(e => e.getClientRects().length);
+                getSelection().removeAllRanges();
+                if (shown.length) return shown.map(e => e.textContent.trim().slice(0, 20)).join(", ");
+                return toolbars.length ? "hidden" : "no toolbar appeared";
+                """) as? String
+            check(toolbar=="hidden" || toolbar=="no toolbar appeared","conversation: selected text shows no toolbar",toolbar as Any)
+            if toolbar != "hidden" { print("NOTE selection toolbar: \(toolbar ?? "nil")") }
             panel.sendEvent(NSEvent.keyEvent(with:.keyDown,location:.zero,modifierFlags:.command,timestamp:0,windowNumber:panel.windowNumber,context:nil,characters:"n",charactersIgnoringModifiers:"n",isARepeat:false,keyCode:45)!)
             await wait(10) { !QuickChatLocation(web.url).isConversation }
             check(!QuickChatLocation(web.url).isConversation,"Command-N starts a new chat",web.url as Any)

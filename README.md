@@ -105,7 +105,9 @@ macOS does not quarantine apps that you build yourself, so Gatekeeper does not b
 1. Click the menu-bar icon, and make sure **Quick Chat** is on. It turns on by itself at launch.
 2. Press **⌥Space**. The panel opens at the bottom center of the screen under the pointer.
 3. Sign in to ChatGPT once, inside the panel. Email, Apple or Microsoft sign-in is the most reliable.
-4. Ask. Press ⌥Space, Esc or ⌘W to close the panel. The next ⌥Space opens the same conversation again.
+4. Ask. Press ⌥Space, Esc or ⌘W to close the panel. The next ⌥Space opens the same conversation again, with your draft.
+
+Each time Quick Chat starts after a normal quit, it starts with empty drafts. After a crash, your drafts stay.
 
 To start Quick Chat at login: **System Settings → General → Login Items → Open at Login → +**, then select Quick Chat.
 

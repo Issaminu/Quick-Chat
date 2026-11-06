@@ -181,6 +181,22 @@ enum PageStyleCheck {
                 if !result[name]! { failures += 1 }
             }
         }
+        // Saved drafts: the script removes only the draft entries, once per session.
+        let draftsCleared = try await web.callAsyncJavaScript("""
+            const db = await new Promise(resolve => { const r = indexedDB.open("codex-browser-host", 1); r.onupgradeneeded = () => r.result.createObjectStore("records"); r.onsuccess = () => resolve(r.result); });
+            await new Promise(resolve => { const tx = db.transaction("records", "readwrite"); tx.objectStore("records").put({ "composer-prompt-drafts-v2": { text: "draft" }, "chatgpt-conversation-prompt-drafts-v2": { c1: "draft" }, "chatgpt-sidebar-state-v2": { open: true } }, "codex.browser.persistedAtomState"); tx.oncomplete = resolve; });
+            db.close();
+            localStorage.setItem("oai/apps/conversationDrafts", "draft");
+            sessionStorage.removeItem("quick-chat-drafts-cleared");
+            eval(script);
+            await new Promise(resolve => setTimeout(resolve, 300));
+            const read = await new Promise(resolve => { const r = indexedDB.open("codex-browser-host"); r.onsuccess = () => { const q = r.result.transaction("records").objectStore("records").get("codex.browser.persistedAtomState"); q.onsuccess = () => { r.result.close(); resolve(q.result); }; }; });
+            const once = sessionStorage.getItem("quick-chat-drafts-cleared") === "1";
+            return Object.keys(read).join(",") === "chatgpt-sidebar-state-v2" && localStorage.getItem("oai/apps/conversationDrafts") === null && once;
+            """, arguments: ["script": QuickChatPageStyle.clearDraftsScript], in: nil, contentWorld: .page) as? Bool == true
+        print("\(draftsCleared ? "PASS" : "FAIL") a clean start removes only the saved drafts, once per session")
+        if !draftsCleared { failures += 1 }
+
         _ = try await web.evaluateJavaScript("document.documentElement.dataset.quickChatPointer = 'outside'")
         try await Task.sleep(for: .milliseconds(400))
         let hidden = try await web.evaluateJavaScript("""

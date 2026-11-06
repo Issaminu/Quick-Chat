@@ -6,6 +6,18 @@ import WebKit
 @MainActor
 final class QuickChatController: NSObject {
     private static let chatURL = URL(string: "https://chatgpt.com/")!
+    /// The app starts with empty drafts after a normal quit. After a crash, ChatGPT's drafts stay,
+    /// so that a crash does not lose a long message. The answer is read once per launch.
+    private static let startsClean: Bool = {
+        let defaults = UserDefaults.standard
+        let key = "QuickChat.QuitNormally"
+        let quitNormally = defaults.object(forKey: key) as? Bool ?? true
+        defaults.set(false, forKey: key)
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { _ in
+            UserDefaults.standard.set(true, forKey: key)
+        }
+        return quitNormally
+    }()
     /// Hosts that stay inside the panel (chat + sign-in flows); other links open in the browser.
     private static let inPanelHosts = ["chatgpt.com", "openai.com", "auth0.com", "google.com", "apple.com",
                                        "microsoftonline.com", "live.com", "microsoft.com"]
@@ -250,6 +262,10 @@ final class QuickChatController: NSObject {
                                                                 injectionTime: .atDocumentStart, forMainFrameOnly: true))
         config.userContentController.addUserScript(WKUserScript(source: QuickChatPageStyle.sandboxFrameScript,
                                                                 injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        if Self.startsClean {
+            config.userContentController.addUserScript(WKUserScript(source: QuickChatPageStyle.clearDraftsScript,
+                                                                    injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
         if let safariURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Safari"),
            let version = Bundle(url: safariURL)?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
             config.applicationNameForUserAgent = "Version/\(version) Safari/605.1.15"
@@ -320,12 +336,16 @@ final class QuickChatController: NSObject {
         }
     }
 
+    /// Starts or leaves a temporary chat with the page's own button, so the page stays loaded.
+    /// The button shows a dashed chat bubble (with a checkmark while a temporary chat is on), in
+    /// every language; its English label is a second way to find it. Without that button (a
+    /// changed page), loads the matching address.
     private func toggleTemporaryChat() {
         guard let webView else { return }
         let leave = QuickChatLocation(webView.url).isTemporary
         webView.evaluateJavaScript("""
             (() => {
-                const button = [...document.querySelectorAll('header button[aria-label*="temporary chat" i], button[data-testid="temporary-chat-button"]')]
+                const button = [...document.querySelectorAll('header button:has(use[href*="chat-bubble"][href*="dashed"]), header button[aria-label*="temporary chat" i], button[data-testid="temporary-chat-button"]')]
                     .find(element => element.getClientRects().length > 0);
                 if (!button) return false;
                 button.click();

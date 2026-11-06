@@ -339,6 +339,43 @@ enum QuickChatPageStyle {
         })();
         """#
 
+    /// Removes ChatGPT's saved drafts (of a new chat and of each conversation), once per web view
+    /// session, before the page reads them. ChatGPT saves them in its persisted page state in
+    /// IndexedDB, and older versions in local storage. The script never creates the database:
+    /// if the page has not made it yet, there is nothing to remove.
+    static let clearDraftsScript = #"""
+        (() => {
+            const host = location.hostname.toLowerCase();
+            if (host !== "chatgpt.com" && !host.endsWith(".chatgpt.com")) return;
+            if (sessionStorage.getItem("quick-chat-drafts-cleared")) return;
+            sessionStorage.setItem("quick-chat-drafts-cleared", "1");
+            for (const key of Object.keys(localStorage)) {
+                if (/^oai\/apps\/.*draft/i.test(key)) localStorage.removeItem(key);
+            }
+            const request = indexedDB.open("codex-browser-host");
+            request.onupgradeneeded = () => request.transaction.abort();
+            request.onerror = event => event.preventDefault();
+            request.onsuccess = () => {
+                const db = request.result;
+                db.onversionchange = () => db.close();
+                if (!db.objectStoreNames.contains("records")) return db.close();
+                const transaction = db.transaction("records", "readwrite");
+                transaction.oncomplete = transaction.onabort = () => db.close();
+                const store = transaction.objectStore("records");
+                const key = "codex.browser.persistedAtomState";
+                const read = store.get(key);
+                read.onsuccess = () => {
+                    const state = read.result;
+                    if (!state || typeof state !== "object") return;
+                    const drafts = Object.keys(state).filter(name => /prompt-drafts/i.test(name));
+                    if (!drafts.length) return;
+                    for (const name of drafts) delete state[name];
+                    if (store.keyPath === null) store.put(state, key); else store.put(state);
+                };
+            };
+        })();
+        """#
+
     /// `value` as a JavaScript string literal.
     private static func javaScriptString(_ value: String) -> String {
         let data = try! JSONSerialization.data(withJSONObject: [value])

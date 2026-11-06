@@ -115,11 +115,11 @@ enum Check {
         buttons.temporaryChat.performClick(nil)
         await wait { (await js(web,"clicks.temporary")) as? Int == 1 }
         check((await js(web,"clicks.temporary")) as? Int == 1 && spy.requests==0,"Temporary Chat uses the page's own button without loading")
-        _=await js(web,"document.querySelector('#temporary').setAttribute('aria-label','Turn off temporary chat')")
+        _=await js(web,"const t=document.querySelector('#temporary'); t.setAttribute('aria-label','Desactivar chat temporal'); t.innerHTML='<svg><use href=\"/icons.svg#codex-icon-chat-bubble-checkmark-dashed-light-20\"></use></svg>'")
         buttons.update(for:URL(string:"https://chatgpt.com/?temporary-chat=true"))
         buttons.temporaryChat.performClick(nil)
         await wait { (await js(web,"clicks.temporary")) as? Int == 2 }
-        check((await js(web,"clicks.temporary")) as? Int == 2 && spy.requests==0,"leaving a temporary chat uses the page's own button without loading")
+        check((await js(web,"clicks.temporary")) as? Int == 2 && spy.requests==0,"leaving a temporary chat uses the page's own button without loading, in any language")
         buttons.update(for:web.url)
         buttons.newChat.performClick(nil)
         await wait { (await js(web,"clicks.newChat")) as? Int == 1 }
