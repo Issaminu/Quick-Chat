@@ -137,12 +137,12 @@ enum Check {
         await wait { (await js(web,"clicks.sidebar")) as? Int == 1 }
         check((await js(web,"clicks.sidebar")) as? Int == 1,"the panel's sidebar button uses the page's sidebar button")
         controller.setPointerInside(false)
-        try? await Task.sleep(for:.milliseconds(600))
+        try? await Task.sleep(for:.milliseconds(250))
         controller.setPointerInside(true)
         try? await Task.sleep(for:.milliseconds(1000))
-        check(buttons.alphaValue == 1,"the title bar stays when the pointer comes back within 1.2 seconds")
+        check(buttons.alphaValue == 1,"the title bar stays when the pointer comes back within 0.5 seconds")
         controller.setPointerInside(false)
-        try? await Task.sleep(for:.milliseconds(600))
+        try? await Task.sleep(for:.milliseconds(250))
         check(buttons.alphaValue == 1,"the title bar waits before it hides")
         await wait { buttons.alphaValue == 0 }
         let pointerOutside=(await js(web,"document.documentElement.dataset.quickChatPointer")) as? String

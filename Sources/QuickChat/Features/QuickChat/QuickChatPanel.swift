@@ -339,14 +339,14 @@ final class QuickChatController: NSObject {
         }
     }
 
-    /// The title bar shows while the pointer is over the panel. It hides 1.2 seconds after the
+    /// The title bar shows while the pointer is over the panel. It hides 0.5 seconds after the
     /// pointer leaves, unless the pointer comes back first. `immediately` skips that delay.
     func setPointerInside(_ inside: Bool, immediately: Bool = false) {
         hideTitleBar?.cancel()
         hideTitleBar = nil
         if inside || immediately { return showTitleBar(inside) }
         hideTitleBar = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(1.2))
+            try? await Task.sleep(for: .milliseconds(500))
             if !Task.isCancelled { self?.showTitleBar(false) }
         }
     }
