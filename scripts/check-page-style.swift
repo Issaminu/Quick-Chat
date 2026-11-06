@@ -113,7 +113,7 @@ enum PageStyleCheck {
             const send = composer.querySelector('.send');
             const result = {
                 'page surfaces are transparent': ['html', 'body', 'main'].every(s => alpha(style(s).backgroundColor) === 0),
-                'sidebar button sits right of the panel close button': shown($('#sidebar-button')) && $('#sidebar-button').getBoundingClientRect().x === 52,
+                'page sidebar button is not drawn and sits under the panel one': !shown($('#sidebar-button')) && $('#sidebar-button').getBoundingClientRect().x === 52,
                 'text uses the system font smoothing': getComputedStyle(composer).webkitFontSmoothing === 'auto',
                 'scrolling does not stretch at the ends': getComputedStyle(document.documentElement).overscrollBehaviorY === 'none',
                 'header has no other page buttons': !shown($('#header-new-chat')) && !shown($('#temporary')) && !shown($('#title')),

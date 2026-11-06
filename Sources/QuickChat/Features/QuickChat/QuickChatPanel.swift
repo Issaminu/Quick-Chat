@@ -16,8 +16,9 @@ final class QuickChatController: NSObject {
     private var headerButtons: HeaderButtons?
     private var loadingView: LoadingView?
     private var pointerWatcher: PointerWatcher?
-    /// The pointer is over the panel. The title bar shows only then.
-    private(set) var isPointerInside = true
+    /// The title bar shows while the pointer is over the panel, and for a moment after it leaves.
+    private(set) var isTitleBarShown = true
+    private var hideTitleBar: Task<Void, Never>?
     private var urlObservation: NSKeyValueObservation?
     private var systemAppearanceObservation: NSKeyValueObservation?
     /// The page's theme, from its last state message.
@@ -73,7 +74,7 @@ final class QuickChatController: NSObject {
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(webView)
         // No "entered" event comes when the panel appears under the pointer.
-        setPointerInside(panel.frame.contains(NSEvent.mouseLocation))
+        setPointerInside(panel.frame.contains(NSEvent.mouseLocation), immediately: true)
         focusComposer()
     }
 
@@ -95,7 +96,9 @@ final class QuickChatController: NSObject {
         headerButtons = nil
         loadingView = nil
         pointerWatcher = nil
-        isPointerInside = true
+        hideTitleBar?.cancel()
+        hideTitleBar = nil
+        isTitleBarShown = true
         urlObservation = nil
         systemAppearanceObservation = nil
         pageIsDark = nil
@@ -141,6 +144,7 @@ final class QuickChatController: NSObject {
         webView.configuration.userContentController.add(PageMessageHandler(self), name: "quickChat")
         let headerButtons = HeaderButtons()
         headerButtons.onClose = { [weak self] in self?.hide(restoreFocus: true) }
+        headerButtons.onSidebar = { [weak self] in self?.toggleSidebar() }
         headerButtons.onOpenInBrowser = { [weak self] in self?.openInBrowser() }
         headerButtons.onTemporaryChat = { [weak self] in self?.toggleTemporaryChat() }
         headerButtons.onNewChat = { [weak self] in self?.newConversation() }
@@ -272,6 +276,14 @@ final class QuickChatController: NSObject {
             }
     }
 
+    /// Opens or closes the page's sidebar with the page's own (hidden) sidebar button.
+    private func toggleSidebar() {
+        webView?.evaluateJavaScript("""
+            [...document.querySelectorAll('header[data-app-shell-titlebar] button[aria-controls]')]
+                .find(element => element.getClientRects().length > 0)?.click();
+            """)
+    }
+
     /// Opens the current page (a conversation, or a new chat) in the default browser and hides the panel.
     private func openInBrowser() {
         let url = webView?.url
@@ -327,20 +339,33 @@ final class QuickChatController: NSObject {
         }
     }
 
-    /// The title bar (the panel's buttons and the page's title bar) shows only while the pointer
-    /// is over the panel. While it is hidden, messages can use its space.
-    func setPointerInside(_ inside: Bool) {
-        guard inside != isPointerInside else { return }
-        isPointerInside = inside
+    /// The title bar shows while the pointer is over the panel. It hides 1.2 seconds after the
+    /// pointer leaves, unless the pointer comes back first. `immediately` skips that delay.
+    func setPointerInside(_ inside: Bool, immediately: Bool = false) {
+        hideTitleBar?.cancel()
+        hideTitleBar = nil
+        if inside || immediately { return showTitleBar(inside) }
+        hideTitleBar = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.2))
+            if !Task.isCancelled { self?.showTitleBar(false) }
+        }
+    }
+
+    /// All the title bar buttons are the panel's own, so one fade shows or hides all of them.
+    /// The page fades the messages under the title bar with the same duration and curve.
+    private func showTitleBar(_ shown: Bool) {
+        guard shown != isTitleBarShown else { return }
+        isTitleBarShown = shown
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.2
-            headerButtons?.animator().alphaValue = inside ? 1 : 0
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            headerButtons?.animator().alphaValue = shown ? 1 : 0
         }
         applyPointerState()
     }
 
     private func applyPointerState() {
-        let value = isPointerInside ? "inside" : "outside"
+        let value = isTitleBarShown ? "inside" : "outside"
         webView?.evaluateJavaScript("document.documentElement.dataset.quickChatPointer = '\(value)'")
     }
 
@@ -726,39 +751,45 @@ struct QuickChatLocation {
 /// The view spans the title bar, but only its buttons take clicks; the rest goes to the page.
 final class HeaderButtons: NSView {
     var onClose: (() -> Void)?
+    var onSidebar: (() -> Void)?
     var onOpenInBrowser: (() -> Void)?
     var onTemporaryChat: (() -> Void)?
     var onNewChat: (() -> Void)?
-    /// Nothing (the sidebar, a menu, a dialog) covers the top left of the page's title bar.
+    /// The page has a title bar, and nothing (the sidebar, a menu, a dialog) covers its top left.
     var isCloseAllowed = false { didSet { updateVisibility() } }
     /// The page has room for the buttons at the top right: it is a signed-in chat page, and
     /// nothing covers this corner.
     var isAllowed = false { didSet { updateVisibility() } }
 
     private(set) var close: HeaderButton!
+    private(set) var sidebar: HeaderButton!
     private(set) var openInBrowser: HeaderButton!
     private(set) var temporaryChat: HeaderButton!
     private(set) var newChat: HeaderButton!
+    private let leadingButtons = NSStackView()
     private let trailingButtons = NSStackView()
     private var location = QuickChatLocation(nil)
 
     init() {
         super.init(frame: .zero)
         close = HeaderButton(image: Self.symbol("xmark.circle"), label: "Close Quick Chat (Esc)") { [weak self] in self?.onClose?() }
+        sidebar = HeaderButton(image: Self.sidebarImage, label: "Sidebar") { [weak self] in self?.onSidebar?() }
         openInBrowser = HeaderButton(image: Self.openInBrowserImage, label: "Open in Browser") { [weak self] in self?.onOpenInBrowser?() }
         temporaryChat = HeaderButton(image: Self.temporaryChatImage, activeImage: Self.temporaryChatOnImage, label: "Temporary Chat") { [weak self] in self?.onTemporaryChat?() }
         newChat = HeaderButton(image: Self.newChatImage, label: "New Chat (⌘N)") { [weak self] in self?.onNewChat?() }
-        trailingButtons.orientation = .horizontal
-        trailingButtons.spacing = 8
-        for button in [openInBrowser!, temporaryChat!, newChat!] { trailingButtons.addArrangedSubview(button) }
-        for view in [close!, trailingButtons] {
+        for (stack, buttons) in [(leadingButtons, [close!, sidebar!]), (trailingButtons, [openInBrowser!, temporaryChat!, newChat!])] {
+            stack.orientation = .horizontal
+            stack.spacing = 8
+            for button in buttons { stack.addArrangedSubview(button) }
+        }
+        for view in [leadingButtons, trailingButtons] {
             view.translatesAutoresizingMaskIntoConstraints = false
             addSubview(view)
         }
         let inset = CGFloat(QuickChatPageStyle.composerInset)
         NSLayoutConstraint.activate([
-            close.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
-            close.topAnchor.constraint(equalTo: topAnchor, constant: inset),
+            leadingButtons.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
+            leadingButtons.topAnchor.constraint(equalTo: topAnchor, constant: inset),
             trailingButtons.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
             trailingButtons.topAnchor.constraint(equalTo: topAnchor, constant: inset),
             heightAnchor.constraint(equalToConstant: CGFloat(QuickChatPageStyle.titleBarButtonSize) + inset * 2),
@@ -771,7 +802,7 @@ final class HeaderButtons: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         let view = super.hitTest(point)
-        return view === self || view === trailingButtons ? nil : view
+        return view === self || view === leadingButtons || view === trailingButtons ? nil : view
     }
 
     func update(for url: URL?) {
@@ -784,7 +815,7 @@ final class HeaderButtons: NSView {
     }
 
     private func updateVisibility() {
-        close.isHidden = !location.isChatGPT || !isCloseAllowed
+        leadingButtons.isHidden = !location.isChatGPT || !isCloseAllowed
         trailingButtons.isHidden = !location.isChatGPT || !isAllowed
     }
 
@@ -809,6 +840,15 @@ final class HeaderButtons: NSView {
         path.lineCapStyle = .round
         path.lineJoinStyle = .round
         path.stroke()
+    }
+
+    /// A rounded rectangle with a short bar on its left, like the page's sidebar icon.
+    private static let sidebarImage = templateImage {
+        stroke(NSBezierPath(roundedRect: NSRect(x: 2.75, y: 3.75, width: 14.5, height: 12.5), xRadius: 3.5, yRadius: 3.5))
+        let bar = NSBezierPath()
+        bar.move(to: NSPoint(x: 7, y: 7.25))
+        bar.line(to: NSPoint(x: 7, y: 12.75))
+        stroke(bar)
     }
 
     /// A window frame with a small window in its corner, like the companion window's

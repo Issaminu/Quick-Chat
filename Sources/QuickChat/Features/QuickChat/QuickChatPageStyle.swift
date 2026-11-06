@@ -44,15 +44,19 @@ enum QuickChatPageStyle {
         }
         header[data-app-shell-titlebar] .bg-surface { background-color: transparent !important; }
         /* The title bar shows only while the pointer is over the panel (the panel sets
-           data-quick-chat-pointer). The value fades, and the message cut below follows it. */
+           data-quick-chat-pointer). The value fades with the panel's buttons (same duration and
+           curve): other pages' title bars fade with it, and messages fade in under it. */
         @property --quick-chat-title-bar-shown { syntax: "<number>"; inherits: true; initial-value: 1; }
-        html { transition: --quick-chat-title-bar-shown 0.2s ease; }
+        html { transition: --quick-chat-title-bar-shown 0.2s ease-in-out; }
         html[data-quick-chat-pointer="outside"] { --quick-chat-title-bar-shown: 0; }
         header[data-app-shell-titlebar] { opacity: var(--quick-chat-title-bar-shown) !important; }
-        /* The panel's close button sits at the top left, so the sidebar button moves to its right. */
+        /* The panel draws its own close and sidebar buttons, so that one fade shows and hides
+           every button of the title bar. The page's sidebar button stays in place under the
+           panel's one (it is what the panel's button clicks), without being drawn. */
         header[data-app-shell-titlebar] [data-app-shell-header-slot="start"] [data-app-shell-header-slot-content] {
             margin-inline-start: \#(titleBarButtonSize + composerInset)px !important;
         }
+        header[data-app-shell-titlebar] [data-app-shell-header-slot="start"] button[aria-controls] { visibility: hidden !important; }
 
         /* Empty chat: only the composer. This hides every greeting, suggestion, and notice around it.
            Content before the composer keeps its space, so the composer stays at the bottom; content
@@ -108,8 +112,8 @@ enum QuickChatPageStyle {
         }
         /* The page's spacer kept the last message clear of the composer; now it only clears the fade. */
         [data-app-action-timeline-scroll] > :first-child > [aria-hidden="true"]:last-child { height: var(--quick-chat-fade) !important; }
-        /* Messages stop at the bottom edge of the title bar (at the top edge while it is hidden)
-           and fade out above the composer. A mask on the scroll area would also hide the
+        /* Messages stop at the bottom edge of the title bar (they fade in under it while it is
+           hidden) and fade out above the composer. A mask on the scroll area would also hide the
            composer, so the mask is on the content and a scroll timeline keeps it aligned with
            the visible area. A short conversation cannot scroll, so its timeline is inactive; the
            mask position then stays at the start value. */
@@ -119,9 +123,9 @@ enum QuickChatPageStyle {
         }
         [data-app-action-timeline-scroll] > :first-child {
             --quick-chat-top: var(--thread-content-top-inset, 0px);
-            --quick-chat-title-bar: calc(min(var(--app-shell-titlebar-height, 52px), var(--quick-chat-top)) * var(--quick-chat-title-bar-shown));
+            --quick-chat-title-bar: min(var(--app-shell-titlebar-height, 52px), var(--quick-chat-top));
             mask-image: linear-gradient(to bottom,
-                transparent var(--quick-chat-title-bar),
+                rgb(0 0 0 / calc(1 - var(--quick-chat-title-bar-shown))) var(--quick-chat-title-bar),
                 black var(--quick-chat-title-bar),
                 black calc(100% - var(--quick-chat-fade)),
                 transparent);
@@ -228,7 +232,8 @@ enum QuickChatPageStyle {
                     // The page is ready when it has its real composer, or a moment after it loads.
                     ready: document.readyState === "complete" && (loadedAWhileAgo ||
                         !!document.querySelector("form[data-chatgpt-composer]") || !document.querySelector("[data-composer-body]")),
-                    close: titleBar && !covered(26, 26),
+                    // The left corner holds the panel's close and sidebar buttons.
+                    close: titleBar && !covered(26, 26) && !covered(70, 26),
                     buttons: titleBar && !!document.querySelector('[data-app-shell-active-page="true"] form[data-chatgpt-composer]') &&
                         !covered(innerWidth - 26, 26) && !covered(innerWidth - 70, 26),
                     dark: scheme === "normal" ? null : scheme.includes("dark")

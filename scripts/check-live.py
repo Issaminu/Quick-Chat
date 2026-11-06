@@ -30,7 +30,7 @@ enum Check {
         while Date()<end { if await condition() { return }; try? await Task.sleep(for:.milliseconds(100)) }
     }
     static func visible(_ buttons:HeaderButtons) -> [String] {
-        [(buttons.close,"close"),(buttons.openInBrowser,"open"),(buttons.temporaryChat,"temporary"),(buttons.newChat,"new")]
+        [(buttons.close,"close"),(buttons.sidebar,"sidebar"),(buttons.openInBrowser,"open"),(buttons.temporaryChat,"temporary"),(buttons.newChat,"new")]
             .filter{!$0.0.isHiddenOrHasHiddenAncestor}.map{$0.1}
     }
     /// Layout facts about the rendered page (the page keeps hidden copies of earlier pages).
@@ -64,7 +64,7 @@ enum Check {
         """
     static func checkLayout(_ web:WKWebView,_ state:String,empty:Bool) async {
         // Until the HTML finishes loading, ChatGPT shows a placeholder page without its title bar.
-        await wait(30) { (await js(web,"return document.readyState === 'complete' && !!document.querySelector('header[data-app-shell-titlebar]')")) as? Bool == true }
+        await wait(30) { (await js(web,"return document.readyState === 'complete' && !!document.querySelector('header[data-app-shell-titlebar]') && !!document.querySelector('form[data-chatgpt-composer]')")) as? Bool == true }
         try? await Task.sleep(for:.milliseconds(500))
         guard let m = await js(web,measure) as? [String:Any] else { return check(false,"\(state): composer is on the page") }
         check(m["styled"] as? Bool == true,"\(state): the panel style is on the page","page is \(m["loading"]!)")
@@ -73,8 +73,8 @@ enum Check {
         let composerAlpha=m["composerAlpha"] as? Int ?? 0
         check(composerAlpha > 0 && composerAlpha < 80,"\(state): composer is translucent",composerAlpha)
         check(m["pageAlpha"] as? Int == 0,"\(state): page background is transparent",m["pageAlpha"]!)
-        check(m["headerButtons"] as? Int == 1,"\(state): title bar shows only the sidebar button",m["headerButtons"]!)
-        check(m["sidebarButton"] as? Double == 52,"\(state): sidebar button sits right of the panel's close button",m["sidebarButton"]!)
+        check(m["headerButtons"] as? Int == 0,"\(state): the page draws no title bar buttons (the panel draws them)",m["headerButtons"]!)
+        check(m["sidebarButton"] as? Double == 52,"\(state): the page's sidebar button sits under the panel's sidebar button",m["sidebarButton"]!)
         check(m["smoothing"] as? String == "auto","\(state): text uses the system's font smoothing",m["smoothing"]!)
         check(m["overscroll"] as? String == "none","\(state): scrolling does not stretch at the ends",m["overscroll"]!)
         if empty {
@@ -103,7 +103,7 @@ enum Check {
         panel.setFrame(NSRect(origin:savedFrame.origin,size:QuickChatPanel.defaultSize),display:true)
         try? await Task.sleep(for:.seconds(1))
         await checkLayout(web,"empty chat",empty:true)
-        check(visible(buttons)==["close","temporary"],"empty chat: panel shows Close and Temporary Chat",await js(web,"return [document.elementFromPoint(innerWidth - 26, 26), document.elementFromPoint(innerWidth - 70, 26)].map(e => e?.outerHTML.slice(0, 160)).join(' | ') + ' active:' + !!document.querySelector('[data-app-shell-active-page=\"true\"] form[data-chatgpt-composer]')") as Any)
+        check(visible(buttons)==["close","sidebar","temporary"],"empty chat: panel shows Close, Sidebar and Temporary Chat",await js(web,"return [document.elementFromPoint(innerWidth - 26, 26), document.elementFromPoint(innerWidth - 70, 26)].map(e => e?.outerHTML.slice(0, 160)).join(' | ') + ' active:' + !!document.querySelector('[data-app-shell-active-page=\"true\"] form[data-chatgpt-composer]')") as Any)
         // A wide window: the page centers its content and docks the sidebar rail. The panel's
         // own frame is put back afterwards, as this check uses Quick Chat's saved settings.
         let frame=panel.frame
@@ -126,7 +126,7 @@ enum Check {
         try? await Task.sleep(for:.seconds(1))
         check(QuickChatLocation(web.url).isTemporary,"Temporary Chat starts a temporary chat",web.url as Any)
         await checkLayout(web,"temporary chat",empty:true)
-        check(visible(buttons)==["close","temporary"],"temporary chat: panel shows Close and Temporary Chat",visible(buttons))
+        check(visible(buttons)==["close","sidebar","temporary"],"temporary chat: panel shows Close, Sidebar and Temporary Chat",visible(buttons))
         buttons.temporaryChat.performClick(nil)
         await wait(10) { !QuickChatLocation(web.url).isTemporary }
         check(!QuickChatLocation(web.url).isTemporary,"Temporary Chat again leaves the temporary chat",web.url as Any)
@@ -154,7 +154,7 @@ enum Check {
             }
             try? await Task.sleep(for:.seconds(2))
             await checkLayout(web,"conversation",empty:false)
-            check(visible(buttons)==["close","open","new"],"conversation: panel shows Close, Open in Browser and New Chat",visible(buttons))
+            check(visible(buttons)==["close","sidebar","open","new"],"conversation: panel shows Close, Sidebar, Open in Browser and New Chat",visible(buttons))
             panel.sendEvent(NSEvent.keyEvent(with:.keyDown,location:.zero,modifierFlags:.command,timestamp:0,windowNumber:panel.windowNumber,context:nil,characters:"n",charactersIgnoringModifiers:"n",isARepeat:false,keyCode:45)!)
             await wait(10) { !QuickChatLocation(web.url).isConversation }
             check(!QuickChatLocation(web.url).isConversation,"Command-N starts a new chat",web.url as Any)
