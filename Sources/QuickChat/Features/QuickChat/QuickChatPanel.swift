@@ -28,7 +28,7 @@ final class QuickChatController: NSObject {
         didSet { panel?.resetSizeShortcut = resetSizeShortcut }
     }
 
-    /// Local shortcut (only while the panel is key) that toggles maximize, like the green button.
+    /// Local shortcut (only while the panel is key) that toggles maximize.
     var maximizeShortcut = Shortcut.loadMaximize() {
         didSet { panel?.maximizeShortcut = maximizeShortcut }
     }
@@ -95,17 +95,34 @@ final class QuickChatController: NSObject {
     private func makePanel() -> QuickChatPanel {
         let panel = QuickChatPanel(contentRect: NSRect(origin: .zero, size: QuickChatPanel.defaultSize))
         panel.onCancel = { [weak self] in self?.hide(restoreFocus: true) }
+        panel.onNewConversation = { [weak self] in self?.newConversation() }
         panel.resetSizeShortcut = resetSizeShortcut
         panel.maximizeShortcut = maximizeShortcut
 
-        let header = DraggableView() // drag strip under the transparent title bar
+        let background = NSVisualEffectView()
+        background.material = .underWindowBackground
+        background.blendingMode = .behindWindow
+        background.state = .active
+        background.wantsLayer = true
+        background.layer?.cornerRadius = 20
+        background.layer?.masksToBounds = true
         let webView = makeWebView()
-        let stack = NSStackView(views: [header, webView])
-        stack.orientation = .vertical
-        stack.spacing = 0
-        stack.edgeInsets = NSEdgeInsets()
-        header.heightAnchor.constraint(equalToConstant: 28).isActive = true
-        panel.contentView = stack
+        let dragRegion = DraggableView()
+        for view in [webView, dragRegion] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            background.addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            webView.leadingAnchor.constraint(equalTo: background.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: background.trailingAnchor),
+            webView.topAnchor.constraint(equalTo: background.topAnchor),
+            webView.bottomAnchor.constraint(equalTo: background.bottomAnchor),
+            dragRegion.leadingAnchor.constraint(equalTo: background.leadingAnchor, constant: 56),
+            dragRegion.trailingAnchor.constraint(equalTo: background.trailingAnchor, constant: -56),
+            dragRegion.topAnchor.constraint(equalTo: background.topAnchor),
+            dragRegion.heightAnchor.constraint(equalToConstant: 44),
+        ])
+        panel.contentView = background
 
         if !panel.setFrameUsingName(QuickChatPanel.autosaveName) {
             center(panel)
@@ -131,6 +148,8 @@ final class QuickChatController: NSObject {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
         config.mediaTypesRequiringUserActionForPlayback = []
+        config.userContentController.addUserScript(WKUserScript(source: QuickChatPageStyle.script,
+                                                                injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         if let safariURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Safari"),
            let version = Bundle(url: safariURL)?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
             config.applicationNameForUserAgent = "Version/\(version) Safari/605.1.15"
@@ -139,13 +158,21 @@ final class QuickChatController: NSObject {
         webView.uiDelegate = self
         webView.navigationDelegate = self
         webView.allowsBackForwardNavigationGestures = true
-        webView.underPageBackgroundColor = .windowBackgroundColor
+        webView.underPageBackgroundColor = .clear
+        // WKWebView has no public macOS switch for transparent page compositing.
+        if webView.responds(to: NSSelectorFromString("_setDrawsBackground:")) {
+            webView.setValue(false, forKey: "drawsBackground")
+        }
         return webView
     }
 
+    private func newConversation() {
+        webView?.load(URLRequest(url: Self.chatURL))
+    }
+
     private func focusComposer() {
-        // Best effort: chatgpt.com's composer is a contenteditable #prompt-textarea.
-        webView?.evaluateJavaScript("document.querySelector('#prompt-textarea')?.focus()")
+        // The compact and desktop pages use different composer IDs.
+        webView?.evaluateJavaScript("document.querySelector('#prompt-textarea, #mobile-composer-prompt')?.focus()")
     }
 
     /// chatgpt.com or a subdomain of it (not e.g. "notchatgpt.com").
@@ -315,20 +342,11 @@ final class QuickChatPanel: NSPanel {
     /// squat look of the new app's 470-wide window cut down to 560 tall.
     static let defaultSize = NSSize(width: 420, height: 560)
     var onCancel: (() -> Void)?
+    var onNewConversation: (() -> Void)?
     /// Local key combo that calls `resetSize()` while the panel is key (default ⌘O).
     var resetSizeShortcut: Shortcut? = .commandO
     /// Local key combo that calls `toggleMaximize()` while the panel is key (default ⌘F).
-    var maximizeShortcut: Shortcut? = .commandF {
-        didSet { updateZoomTooltip() }
-    }
-
-    /// System traffic-light buttons shown in the title bar's top-left cluster (the rest stay
-    /// hidden). Red close goes through `close()` below, so it hides rather than destroys; green
-    /// zoom is rerouted to `toggleMaximize()` (see `configureZoomButton()`).
-    static let trafficLights: [NSWindow.ButtonType] = [.closeButton, .zoomButton]
-
-    /// Where the green button sits when minimize is hidden: minimize's slot, so there's no gap.
-    private var zoomButtonOrigin: NSPoint?
+    var maximizeShortcut: Shortcut? = .commandF
 
     /// The user's frame from before maximizing; non-nil while maximized. Hiding and showing
     /// keep the panel maximized; a relaunch doesn't, as the maximized frame is never autosaved.
@@ -339,24 +357,20 @@ final class QuickChatPanel: NSPanel {
 
     init(contentRect: NSRect) {
         super.init(contentRect: contentRect,
-                   styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+                   styleMask: [.borderless, .resizable],
                    backing: .buffered, defer: false)
         title = "ChatGPT"
-        titleVisibility = .hidden
-        titlebarAppearsTransparent = true
-        // Join full-screen spaces without tiling; the green button only maximizes.
+        // Join full-screen spaces without becoming a full-screen tile.
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .fullScreenDisallowsTiling]
-        for button in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
-            standardWindowButton(button)?.isHidden = !Self.trafficLights.contains(button)
-        }
-        configureZoomButton()
         isFloatingPanel = true
         level = .floating
         hidesOnDeactivate = false
         isReleasedWhenClosed = false
         isMovableByWindowBackground = false
         minSize = NSSize(width: 400, height: 400)
-        backgroundColor = .windowBackgroundColor
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = true
         for name in [NSWindow.didMoveNotification, NSWindow.didResizeNotification] {
             NotificationCenter.default.addObserver(self, selector: #selector(frameDidChange),
                                                    name: name, object: self)
@@ -366,44 +380,7 @@ final class QuickChatPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 
-    /// Points the green button at `toggleMaximize()` and, if minimize is hidden, slides it into
-    /// minimize's slot next to close. AppKit re-lays out the title bar buttons (resize, key
-    /// changes), so the button's frame changes are watched and the slot re-applied.
-    private func configureZoomButton() {
-        guard let zoom = standardWindowButton(.zoomButton), !zoom.isHidden else { return }
-        zoom.target = self
-        zoom.action = #selector(maximizeButtonClicked(_:))
-        updateZoomTooltip()
-
-        guard !Self.trafficLights.contains(.miniaturizeButton),
-              let mini = standardWindowButton(.miniaturizeButton) else { return }
-        zoomButtonOrigin = mini.frame.origin
-        pinZoomButton()
-        zoom.postsFrameChangedNotifications = true
-        NotificationCenter.default.addObserver(self, selector: #selector(pinZoomButton),
-                                               name: NSView.frameDidChangeNotification, object: zoom)
-    }
-
-    /// Deferred a turn: moving the button synchronously inside AppKit's title bar layout pass
-    /// gets overwritten by the rest of that pass.
-    @objc private func pinZoomButton() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self, let zoomButtonOrigin = self.zoomButtonOrigin,
-                  let zoom = self.standardWindowButton(.zoomButton),
-                  zoom.frame.origin != zoomButtonOrigin else { return }
-            zoom.setFrameOrigin(zoomButtonOrigin)
-        }
-    }
-
-    private func updateZoomTooltip() {
-        var tip = isMaximized ? "Restore Size" : "Maximize"
-        if let maximizeShortcut { tip += " (\(maximizeShortcut.displayString))" }
-        standardWindowButton(.zoomButton)?.toolTip = tip
-    }
-
-    @objc private func maximizeButtonClicked(_ sender: Any?) { toggleMaximize() }
-
-    /// Title bar double-click / Window ▸ Zoom toggle maximize too, instead of AppKit's own zoom.
+    /// Window ▸ Zoom uses the same maximize behavior as the drag region and shortcut.
     override func zoom(_ sender: Any?) { toggleMaximize() }
 
     /// Esc (when the page doesn't handle it) hides the panel.
@@ -420,7 +397,6 @@ final class QuickChatPanel: NSPanel {
             restoreFrame = frame
             setFrameAutosaveName("") // keep the user's frame as the one restored on relaunch
             setOwnFrame(visible)
-            updateZoomTooltip()
         }
     }
 
@@ -454,7 +430,6 @@ final class QuickChatPanel: NSPanel {
         restoreFrame = nil
         setFrameAutosaveName(Self.autosaveName)
         saveFrame(usingName: Self.autosaveName)
-        updateZoomTooltip()
     }
 
     /// The user moved or resized the maximized panel: that frame becomes their own.
@@ -465,6 +440,11 @@ final class QuickChatPanel: NSPanel {
     /// Runs the Reset Window Size or Maximize action if `event` is its shortcut. Key repeats
     /// are swallowed, so holding the shortcut doesn't toggle maximize over and over.
     private func handleLocalShortcut(_ event: NSEvent) -> Bool {
+        if event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command,
+           event.charactersIgnoringModifiers?.lowercased() == "n" {
+            if !event.isARepeat { onNewConversation?() }
+            return true
+        }
         guard let pressed = Shortcut(event: event) else { return false }
         guard pressed == resetSizeShortcut || pressed == maximizeShortcut else { return false }
         if event.isARepeat { return true }
@@ -500,7 +480,13 @@ final class QuickChatPanel: NSPanel {
     }
 }
 
-/// Header strip that drags the window.
+/// Drag the empty middle of the web header without covering its buttons or adding a bar.
 private final class DraggableView: NSView {
-    override var mouseDownCanMoveWindow: Bool { true }
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 {
+            (window as? QuickChatPanel)?.toggleMaximize()
+        } else {
+            window?.performDrag(with: event)
+        }
+    }
 }
