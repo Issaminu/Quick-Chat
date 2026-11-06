@@ -98,7 +98,8 @@ enum QuickChatPageStyle {
         [data-app-action-timeline-scroll] > :first-child > [aria-hidden="true"]:last-child { height: var(--quick-chat-fade) !important; }
         /* Messages stop at the bottom edge of the title bar and fade out above the composer. A mask
            on the scroll area would also hide the composer, so the mask is on the content and a
-           scroll timeline keeps it aligned with the visible area. */
+           scroll timeline keeps it aligned with the visible area. A short conversation cannot
+           scroll, so its timeline is inactive; the mask position then stays at the start value. */
         @keyframes quick-chat-follow-scroll {
             from { mask-position: 0 calc(0px - var(--quick-chat-top)); }
             to { mask-position: 0 100%; }
@@ -112,6 +113,7 @@ enum QuickChatPageStyle {
                 black calc(100% - var(--quick-chat-fade)),
                 transparent);
             mask-size: 100% calc(100cqh + var(--quick-chat-top));
+            mask-position: 0 calc(0px - var(--quick-chat-top));
             mask-repeat: no-repeat;
             animation: quick-chat-follow-scroll linear both;
             animation-timeline: --quick-chat-thread;
@@ -167,6 +169,7 @@ enum QuickChatPageStyle {
             };
             let previous = "";
             let pending = false;
+            let loadedAWhileAgo = false;
             const report = () => {
                 pending = false;
                 // Until the page's own style loads, it has no color scheme; the panel then keeps its theme.
@@ -174,6 +177,10 @@ enum QuickChatPageStyle {
                 const titleBar = !!document.querySelector("header[data-app-shell-titlebar]");
                 const state = {
                     type: "state",
+                    // While the HTML loads, the page shows a placeholder with a different composer.
+                    // The page is ready when it has its real composer, or a moment after it loads.
+                    ready: document.readyState === "complete" && (loadedAWhileAgo ||
+                        !!document.querySelector("form[data-chatgpt-composer]") || !document.querySelector("[data-composer-body]")),
                     close: titleBar && !covered(26, 26),
                     buttons: titleBar && !!document.querySelector('[data-app-shell-active-page="true"] form[data-chatgpt-composer]') &&
                         !covered(innerWidth - 26, 26) && !covered(innerWidth - 70, 26),
@@ -188,6 +195,8 @@ enum QuickChatPageStyle {
                 attributeFilter: ["class", "style", "hidden", "open", "aria-expanded", "aria-hidden", "data-state", "data-theme"]
             });
             for (const name of ["transitionend", "animationend", "resize"]) window.addEventListener(name, schedule, true);
+            document.addEventListener("readystatechange", schedule);
+            window.addEventListener("load", () => setTimeout(() => { loadedAWhileAgo = true; schedule(); }, 1000));
             report();
         })();
         """#

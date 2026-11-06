@@ -71,6 +71,7 @@ enum Check {
         let background=panel.contentView as! NSVisualEffectView
         let web=background.subviews.compactMap{$0 as? WKWebView}.first!
         let buttons=background.subviews.compactMap{$0 as? HeaderButtons}.first!
+        let loading=background.subviews.compactMap{$0 as? LoadingView}.first!
         let screen=NSScreen.screens.first{$0.frame.intersects(panel.frame)}!
         check(abs(panel.frame.minX-(screen.visibleFrame.midX-panel.frame.width/2))<1 && abs(panel.frame.minY-(screen.visibleFrame.minY+32))<1,"fresh panel opens bottom-center")
         check(panel.frame.size==NSSize(width:440,height:540),"default dimensions match the reference popup")
@@ -82,7 +83,8 @@ enum Check {
         check(locations.allSatisfy{let l=QuickChatLocation(URL(string:$0.0)); return l.isChatGPT && l.isConversation==$0.1 && l.isTemporary==$0.2},"addresses are read as empty chat or conversation, temporary or not")
         check(!QuickChatLocation(URL(string:"https://auth.openai.com/log-in")).isChatGPT,"other sites are not ChatGPT")
 
-        await wait { visible(buttons).count==3 }
+        await wait { visible(buttons).count==3 && !loading.isLoading }
+        check(!loading.isLoading,"the loading view hides when the page is ready")
         check(visible(buttons)==["close","open","new"],"conversation shows Close, Open in Browser and New Chat",visible(buttons))
         buttons.update(for:URL(string:"https://chatgpt.com/"))
         check(visible(buttons)==["close","temporary"],"empty chat shows Close and Temporary Chat",visible(buttons))
@@ -108,6 +110,11 @@ enum Check {
         buttons.temporaryChat.performClick(nil)
         await wait { (await js(web,"clicks.temporary")) as? Int == 1 }
         check((await js(web,"clicks.temporary")) as? Int == 1 && spy.requests==0,"Temporary Chat uses the page's own button without loading")
+        _=await js(web,"document.querySelector('#temporary').setAttribute('aria-label','Turn off temporary chat')")
+        buttons.update(for:URL(string:"https://chatgpt.com/?temporary-chat=true"))
+        buttons.temporaryChat.performClick(nil)
+        await wait { (await js(web,"clicks.temporary")) as? Int == 2 }
+        check((await js(web,"clicks.temporary")) as? Int == 2 && spy.requests==0,"leaving a temporary chat uses the page's own button without loading")
         buttons.update(for:web.url)
         buttons.newChat.performClick(nil)
         await wait { (await js(web,"clicks.newChat")) as? Int == 1 }

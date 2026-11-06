@@ -40,7 +40,7 @@ enum PageStyleCheck {
         #page { flex:1; min-height:0; display:flex; flex-direction:column; }
         #hero { flex:1; } .contents { display:contents; }
         #thread { position:relative; flex:1; min-height:0; }
-        [data-app-action-timeline-scroll] { height:100%; overflow-y:auto; padding-top:32px; display:flex; flex-direction:column; }
+        [data-app-action-timeline-scroll] { --thread-content-top-inset:32px; height:100%; overflow-y:auto; padding-top:32px; display:flex; flex-direction:column; }
         .content { min-height:100%; flex-shrink:0; display:flex; flex-direction:column; }
         .content p { height:40px; margin:0; }
         .spacer { position:sticky; bottom:0; flex-shrink:0; height:calc(var(--thread-scroll-padding-bottom) - 1rem); }
@@ -82,11 +82,11 @@ enum PageStyleCheck {
         </div></template>
         <script>
         // Like ChatGPT: render a page from a template and track the composer area's height.
-        window.show = name => {
+        window.show = (name, messages = 40) => {
             document.querySelector('#page').replaceChildren(document.querySelector('#' + name).content.cloneNode(true));
             const scroller = document.querySelector('[data-app-action-timeline-scroll]');
             if (!scroller) return;
-            document.querySelector('#messages').innerHTML = '<p>Message</p>'.repeat(40);
+            document.querySelector('#messages').innerHTML = '<p>Message</p>'.repeat(messages);
             const footer = document.querySelector('[data-thread-scroll-footer]');
             new ResizeObserver(() => scroller.style.setProperty('--thread-scroll-padding-bottom', footer.offsetHeight + 16 + 'px')).observe(footer);
         };
@@ -131,6 +131,9 @@ enum PageStyleCheck {
                 result['messages fade with the scroll position'] = getComputedStyle(content).maskImage.includes('gradient') &&
                     getComputedStyle(content).animationName === 'quick-chat-follow-scroll';
                 result['scroll-to-bottom button keeps its fill'] = alpha(style('#scroll-down').backgroundColor) === 255;
+                if (scroller.scrollHeight <= scroller.clientHeight) {
+                    result['mask starts at the top of the visible area'] = getComputedStyle(content).maskPosition.endsWith('-32px');
+                }
                 result['message text is 15 points'] = getComputedStyle(content).getPropertyValue('--font-text-md-size').trim() === '15px';
                 result['disclaimer is hidden and takes no space'] = $('#disclaimer').getClientRects().length === 0;
                 result['opaque composer backdrop is hidden'] = !shown($('[data-thread-scroll-footer] > [aria-hidden]'));
@@ -156,9 +159,11 @@ enum PageStyleCheck {
         }
         guard ready else { print("FAIL: fixture did not load"); exit(1) }
         var failures = 0
-        for state in ["empty chat", "conversation (after the first message)"] {
-            if state != "empty chat" {
-                _ = try await web.evaluateJavaScript("show('conversation')")
+        let states = ["empty chat": "", "conversation (after the first message)": "show('conversation')",
+                      "short conversation (it cannot scroll)": "show('conversation', 1)"]
+        for state in ["empty chat", "conversation (after the first message)", "short conversation (it cannot scroll)"] {
+            if !states[state]!.isEmpty {
+                _ = try await web.evaluateJavaScript(states[state]!)
                 try await Task.sleep(for: .milliseconds(200))
             }
             let result = try await web.evaluateJavaScript(checks) as! [String: Bool]

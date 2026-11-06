@@ -14,6 +14,7 @@ final class QuickChatController: NSObject {
     private var panel: QuickChatPanel?
     private var webView: WKWebView?
     private var headerButtons: HeaderButtons?
+    private var loadingView: LoadingView?
     private var urlObservation: NSKeyValueObservation?
     private var systemAppearanceObservation: NSKeyValueObservation?
     /// The page's theme, from its last state message.
@@ -81,6 +82,7 @@ final class QuickChatController: NSObject {
         panel = nil
         webView = nil
         headerButtons = nil
+        loadingView = nil
         urlObservation = nil
         systemAppearanceObservation = nil
         pageIsDark = nil
@@ -125,7 +127,8 @@ final class QuickChatController: NSObject {
         headerButtons.onOpenInBrowser = { [weak self] in self?.openInBrowser() }
         headerButtons.onTemporaryChat = { [weak self] in self?.toggleTemporaryChat() }
         headerButtons.onNewChat = { [weak self] in self?.newConversation() }
-        for view in [webView, headerButtons] {
+        let loadingView = LoadingView()
+        for view in [webView, loadingView, headerButtons] {
             view.translatesAutoresizingMaskIntoConstraints = false
             background.addSubview(view)
         }
@@ -134,6 +137,10 @@ final class QuickChatController: NSObject {
             webView.trailingAnchor.constraint(equalTo: background.trailingAnchor),
             webView.topAnchor.constraint(equalTo: background.topAnchor),
             webView.bottomAnchor.constraint(equalTo: background.bottomAnchor),
+            loadingView.leadingAnchor.constraint(equalTo: background.leadingAnchor),
+            loadingView.trailingAnchor.constraint(equalTo: background.trailingAnchor),
+            loadingView.topAnchor.constraint(equalTo: background.topAnchor),
+            loadingView.bottomAnchor.constraint(equalTo: background.bottomAnchor),
             headerButtons.leadingAnchor.constraint(equalTo: background.leadingAnchor),
             headerButtons.trailingAnchor.constraint(equalTo: background.trailingAnchor),
             headerButtons.topAnchor.constraint(equalTo: background.topAnchor),
@@ -145,6 +152,7 @@ final class QuickChatController: NSObject {
         self.panel = panel
         self.webView = webView
         self.headerButtons = headerButtons
+        self.loadingView = loadingView
         systemAppearanceObservation = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
             MainActor.assumeIsolated { self?.updateAppearance() }
         }
@@ -255,13 +263,15 @@ final class QuickChatController: NSObject {
     }
 
     /// Starts or leaves a temporary chat with the page's own button, so the page stays loaded.
-    /// Without that button (other languages, a changed page), loads the matching address.
+    /// The button is "Temporary chat", or "Turn off temporary chat" while one is on. Without that
+    /// button (other languages, a changed page), loads the matching address.
     private func toggleTemporaryChat() {
         guard let webView else { return }
         let leave = QuickChatLocation(webView.url).isTemporary
         webView.evaluateJavaScript("""
             (() => {
-                const button = document.querySelector('header button[aria-label="Temporary chat" i], button[data-testid="temporary-chat-button"]');
+                const button = [...document.querySelectorAll('header button[aria-label*="temporary chat" i], button[data-testid="temporary-chat-button"]')]
+                    .find(element => element.getClientRects().length > 0);
                 if (!button) return false;
                 button.click();
                 return true;
@@ -283,8 +293,11 @@ final class QuickChatController: NSObject {
         case "zoom":
             panel?.toggleMaximize()
         case "state":
+            // While the page loads, only Close shows; the page cannot use the other buttons yet.
+            let ready = message["ready"] as? Bool == true
+            if ready { loadingView?.stop() }
             headerButtons?.isCloseAllowed = message["close"] as? Bool ?? false
-            headerButtons?.isAllowed = message["buttons"] as? Bool ?? false
+            headerButtons?.isAllowed = ready && message["buttons"] as? Bool == true
             pageIsDark = message["dark"] as? Bool
             updateAppearance()
         default:
@@ -411,8 +424,18 @@ extension QuickChatController: WKUIDelegate, WKNavigationDelegate, WKDownloadDel
         download.delegate = self
     }
 
+    /// A new ChatGPT page shows a placeholder until its HTML loads; the loading view covers it
+    /// until the page reports that it is ready. Other pages (such as sign-in) show as they load.
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        if QuickChatLocation(webView.url).isChatGPT { loadingView?.start() } else { loadingView?.stop() }
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         focusComposer()
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        loadingView?.stop()
     }
 
     /// macOS may kill the web content process (often while hidden, under memory pressure), which
@@ -668,7 +691,7 @@ final class HeaderButtons: NSView {
 
     init() {
         super.init(frame: .zero)
-        close = HeaderButton(image: Self.symbol("xmark.circle.fill"), label: "Close Quick Chat (Esc)", showsFill: false) { [weak self] in self?.onClose?() }
+        close = HeaderButton(image: Self.symbol("xmark.circle.fill"), label: "Close Quick Chat (Esc)") { [weak self] in self?.onClose?() }
         openInBrowser = HeaderButton(image: Self.openInBrowserImage, label: "Open in Browser") { [weak self] in self?.onOpenInBrowser?() }
         temporaryChat = HeaderButton(image: Self.temporaryChatImage, label: "Temporary Chat") { [weak self] in self?.onTemporaryChat?() }
         newChat = HeaderButton(image: Self.newChatImage, label: "New Chat (⌘N)") { [weak self] in self?.onNewChat?() }
@@ -795,16 +818,14 @@ final class HeaderButtons: NSView {
 }
 
 /// A borderless icon button like the page's title bar buttons: 36 pt, 8 pt corners, a light
-/// fill on hover and while active. Without the fill, the icon gets brighter on hover.
+/// fill on hover and while active.
 final class HeaderButton: NSButton {
     private let onPress: () -> Void
-    private let showsFill: Bool
     private var isHovered = false { didSet { updateFill() } }
     var isActive = false { didSet { updateFill() } }
 
-    init(image: NSImage, label: String, showsFill: Bool = true, onPress: @escaping () -> Void) {
+    init(image: NSImage, label: String, onPress: @escaping () -> Void) {
         self.onPress = onPress
-        self.showsFill = showsFill
         super.init(frame: .zero)
         self.image = image
         imagePosition = .imageOnly
@@ -842,11 +863,69 @@ final class HeaderButton: NSButton {
 
     private func updateFill() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            let alpha: CGFloat = !showsFill ? 0 : isActive ? 0.14 : isHovered ? 0.08 : 0
+            let alpha: CGFloat = isActive ? 0.14 : isHovered ? 0.08 : 0
             layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(alpha).cgColor
-            contentTintColor = isActive || (isHovered && !showsFill) ? .labelColor : .secondaryLabelColor
+            contentTintColor = isActive ? .labelColor : .secondaryLabelColor
         }
     }
+}
+
+/// Covers the page with the panel's material and a spinner while a page loads. It stops when
+/// the page is ready, or after 15 seconds. A drag on it moves the panel.
+final class LoadingView: NSVisualEffectView {
+    private let spinner = NSProgressIndicator()
+    private var timeout: Task<Void, Never>?
+
+    init() {
+        super.init(frame: .zero)
+        material = .underWindowBackground
+        blendingMode = .behindWindow
+        state = .active
+        isHidden = true
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.isDisplayedWhenStopped = false
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(spinner)
+        NSLayoutConstraint.activate([
+            spinner.centerXAnchor.constraint(equalTo: centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    var isLoading: Bool { !isHidden }
+
+    func start() {
+        alphaValue = 1
+        isHidden = false
+        spinner.startAnimation(nil)
+        timeout?.cancel()
+        timeout = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(15))
+            if !Task.isCancelled { self?.stop() }
+        }
+    }
+
+    func stop() {
+        timeout?.cancel()
+        timeout = nil
+        guard isLoading else { return }
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.15
+            animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.alphaValue == 0 else { return }
+                self.isHidden = true
+                self.spinner.stopAnimation(nil)
+            }
+        })
+    }
+
+    override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
 }
 
 /// Page messages go to the controller; the handler does not retain it.
