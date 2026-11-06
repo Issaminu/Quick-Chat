@@ -133,7 +133,7 @@ Quick Chat changes how chatgpt.com looks inside the panel. It changes only the l
 - **One material.** The page background is transparent, so the panel's native translucent material shows through. Menus, the sidebar and floating buttons keep their own backgrounds.
 - **Concentric corners.** The window corners have a 20-point radius. The composer sits 8 points from the sides and the bottom, so its corners have a 12-point radius (20 − 8), with the same center.
 - **A clear message area.** Messages stop at the top edge of the composer and fade out above it, so no text shows beside, below or through the composer. At the top, messages stop at the bottom edge of the title bar.
-- **Native text.** Text uses the system font with the system's font smoothing, and message text is 15 points.
+- **Native text.** Text uses the system font with the system's font smoothing, and message text is 15 points. As in a native app, only message text, the composer and form fields can be selected; buttons, labels, the title bar and the sidebar cannot, also with ⌘A.
 - **Quiet scrolling.** The message list and a long draft in the composer have a thin rounded scroll bar inside the right edge. They do not stretch at the ends. A code block scrolls its code first, then the conversation.
 - **The cursor stays in view.** In a long draft, the composer scrolls with the text cursor while you type, paste or move the cursor.
 - **No jumps when the size changes.** During Expand or Shrink, a cover with the panel's material fades in, the window changes its size, and the cover fades out when the page is drawn at the new size.

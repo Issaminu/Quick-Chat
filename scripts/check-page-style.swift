@@ -137,6 +137,10 @@ enum PageStyleCheck {
                 result['messages fade with the scroll position'] = getComputedStyle(content).maskImage.includes('gradient') &&
                     getComputedStyle(content).animationName === 'quick-chat-follow-scroll';
                 result['a code block passes the scroll on at its ends'] = getComputedStyle($('#code')).overscrollBehaviorY === 'auto';
+                const select = e => getComputedStyle(e).webkitUserSelect || getComputedStyle(e).userSelect;
+                result['only message text, the composer and fields can be selected'] = select(document.body) === 'none' &&
+                    select($('#messages p')) === 'text' && select($('#scroll-down')) === 'none' &&
+                    select(composer.querySelector('[contenteditable="true"]')) === 'text' && select($('#sidebar-button')) === 'none';
                 result['message list has a thin scroll bar while it can scroll'] =
                     scroller.offsetWidth - scroller.clientWidth === (scroller.scrollHeight > scroller.clientHeight ? 10 : 0);
                 result['scroll-to-bottom button keeps its fill'] = alpha(style('#scroll-down').backgroundColor) === 255;

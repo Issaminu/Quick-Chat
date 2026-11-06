@@ -153,6 +153,21 @@ enum QuickChatPageStyle {
         * { -webkit-font-smoothing: auto !important; }
         [data-app-action-timeline-scroll] :not(th, td, th *, td *) { --font-text-md-size: 15px !important; }
 
+        /* Like a native app: only text in the message list, the composer and form fields can be
+           selected. Buttons, labels, the title bar, the sidebar and menus cannot, also with ⌘A. */
+        body { -webkit-user-select: none !important; user-select: none !important; }
+        [data-app-action-timeline-scroll] * { -webkit-user-select: text !important; user-select: text !important; }
+        [data-app-action-timeline-scroll] :is(button, [role="button"], [role="menuitem"], [role="tab"]),
+        [data-app-action-timeline-scroll] :is(button, [role="button"], [role="menuitem"], [role="tab"]) * {
+            -webkit-user-select: none !important;
+            user-select: none !important;
+        }
+        :is([contenteditable="true"], [contenteditable="plaintext-only"], input, textarea),
+        :is([contenteditable="true"], [contenteditable="plaintext-only"]) * {
+            -webkit-user-select: text !important;
+            user-select: text !important;
+        }
+
         /* No toolbars on selected text: "Ask ChatGPT" on a message, and text formatting in the
            composer. Both are floating boxes whose content is a toolbar of buttons
            (role="presentation"); menus and other popovers have other content. */
