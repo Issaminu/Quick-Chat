@@ -24,6 +24,8 @@ final class QuickChatController: NSObject {
     /// The page's theme, from its last state message.
     private var pageIsDark: Bool?
     private var previousApp: NSRunningApplication?
+    /// The panel showed since the app started; the first show places it at the default position.
+    private var hasShown = false
     /// Where each in-flight download is being written, for "reveal in Finder" when it finishes.
     private var downloadDestinations: [ObjectIdentifier: URL] = [:]
     /// Recent automatic reloads after the web content process died, to stop a crash loop.
@@ -70,6 +72,10 @@ final class QuickChatController: NSObject {
             crashReloads = []
             reload(webView)
         }
+        if !hasShown {
+            hasShown = true
+            placeInitially(panel)
+        }
         // The panel is non-activating: it takes key input, and the app in front stays active.
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(webView)
@@ -104,6 +110,7 @@ final class QuickChatController: NSObject {
         pageIsDark = nil
         crashReloads = []
         reloadOnShow = false
+        hasShown = false
     }
 
     /// Signs out by clearing the panel's website data (cookies, storage).
@@ -168,7 +175,7 @@ final class QuickChatController: NSObject {
         ])
         panel.contentView = background
 
-        restorePosition(of: panel)
+        restoreSize(of: panel)
 
         self.panel = panel
         self.webView = webView
@@ -198,32 +205,26 @@ final class QuickChatController: NSObject {
         return image
     }
 
-    private func restorePosition(of panel: NSPanel) {
+    /// Keeps the saved size. The position is not kept: the first show after launch places the
+    /// panel (see `show()`).
+    private func restoreSize(of panel: NSPanel) {
         let saved = UserDefaults.standard.string(forKey: "NSWindow Frame \(QuickChatPanel.autosaveName)")?
             .split(separator: " ").prefix(4).compactMap { Double($0) }
-        panel.setFrameAutosaveName(QuickChatPanel.autosaveName)
-        guard saved != nil, panel.setFrameUsingName(QuickChatPanel.autosaveName) else {
-            placeInitially(panel)
-            return
-        }
-        // AppKit can remap an external display's saved frame to the main display. Keep the
-        // original coordinates when they still fit; otherwise use AppKit's adjusted frame.
+        panel.setFrameAutosaveName(QuickChatPanel.autosaveName) // this can apply the saved frame
         if let saved, saved.count == 4, saved.allSatisfy({ $0.isFinite }),
            saved[2] >= panel.minSize.width, saved[3] >= panel.minSize.height {
-            let frame = NSRect(x: saved[0], y: saved[1], width: saved[2], height: saved[3])
-            if NSScreen.screens.contains(where: { $0.visibleFrame.contains(frame) }) {
-                panel.setFrame(frame, display: false)
-            }
+            panel.setFrame(NSRect(origin: panel.frame.origin, size: NSSize(width: saved[2], height: saved[3])), display: false)
         }
     }
 
+    /// The default position: centered near the bottom of the screen under the pointer.
     private func placeInitially(_ panel: NSPanel) {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
         guard let visible = screen?.visibleFrame else { return }
-        let size = panel.frame.size
-        panel.setFrameOrigin(NSPoint(x: visible.midX - size.width / 2,
-                                     y: visible.minY + 32))
+        let size = NSSize(width: min(panel.frame.width, visible.width), height: min(panel.frame.height, visible.height - 32))
+        panel.setFrame(NSRect(x: visible.midX - size.width / 2, y: visible.minY + 32, width: size.width, height: size.height),
+                       display: false)
     }
 
     private func makeWebView() -> WKWebView {

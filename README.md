@@ -38,7 +38,7 @@ Quick Chat enables its global shortcut automatically when the app launches; the 
 ### Quick Chat
 
 - A global shortcut (⌥Space by default; change it with **Change Shortcut…**) toggles a floating panel with chatgpt.com inside.
-- The panel is 440×540 by default, so chatgpt.com uses its compact layout. It has a native translucent background with no separate title bar. Only the message list has a scroll bar: a thin rounded thumb inside the right edge. Scrolling has no elastic stretch at the ends. On the first launch it opens at the bottom-center of the display under the pointer. After that, the size and position are remembered.
+- The panel is 440×540 by default, so chatgpt.com uses its compact layout. It has a native translucent background with no separate title bar. Only the message list has a scroll bar: a thin rounded thumb inside the right edge. Scrolling has no elastic stretch at the ends. Each time the app starts, the panel first opens at the bottom-center of the display under the pointer, a little above the bottom edge. Its size is remembered across launches; its position is kept until the app quits.
 - The title bar shows while the pointer is over the panel, and hides 0.5 seconds after the pointer leaves. All its buttons fade in and out together; while it is hidden, messages use its space. It has **Close** (same as Esc) and **Sidebar** at the top left. The icons follow ChatGPT's companion window. The top right shows:
   - In an empty chat: **Temporary Chat**.
   - In a conversation: **Open in Browser** (opens that conversation in your default browser) and **New Chat** (same as ⌘N).

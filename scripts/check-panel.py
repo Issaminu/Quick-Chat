@@ -68,7 +68,7 @@ enum Check {
         let controller=QuickChatController()
         let panel=controller.makePanel()
         NSApp.activate()
-        panel.makeKeyAndOrderFront(nil)
+        controller.show()
         let background=panel.contentView as! NSVisualEffectView
         let web=background.subviews.compactMap{$0 as? WKWebView}.first!
         let buttons=background.subviews.compactMap{$0 as? HeaderButtons}.first!
@@ -187,7 +187,16 @@ enum Check {
         panel.setFrameAutosaveName("") // release the first window's name, as a closed app would
         let restored=QuickChatController()
         let restoredPanel=restored.makePanel()
-        check(restoredPanel.frame.origin==saved && restoredPanel.frame.size==NSSize(width:500,height:640),"saved position and size are restored instead of recentered")
+        check(restoredPanel.frame.size==NSSize(width:500,height:640),"the saved size is restored at launch",restoredPanel.frame)
+        restored.show()
+        let mouseScreen=NSScreen.screens.first{$0.frame.contains(NSEvent.mouseLocation)} ?? NSScreen.main!
+        let expected=NSPoint(x:mouseScreen.visibleFrame.midX-250,y:mouseScreen.visibleFrame.minY+32)
+        check(restoredPanel.frame.origin==expected && restoredPanel.frame.size==NSSize(width:500,height:640),"the first show after launch uses the default position, not the saved one",restoredPanel.frame)
+        let moved=NSPoint(x:mouseScreen.visibleFrame.minX+60,y:mouseScreen.visibleFrame.minY+90)
+        restoredPanel.setFrameOrigin(moved)
+        restored.hide(restoreFocus:false)
+        restored.show()
+        check(restoredPanel.frame.origin==moved,"later shows keep the position the panel had",restoredPanel.frame)
         restored.tearDown()
         print("\(failures) failed checks")
         fflush(nil)
