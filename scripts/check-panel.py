@@ -156,6 +156,14 @@ enum Check {
         let pointerInside=(await js(web,"document.documentElement.dataset.quickChatPointer")) as? String
         check(buttons.alphaValue == 1 && pointerInside == "inside","the title bar shows again when the pointer comes back")
 
+        let materials=[background, loading, cover].compactMap{$0 as? PanelMaterialView}
+        _=await js(web,"document.documentElement.style.colorScheme='light'")
+        await wait { materials.allSatisfy(\.isLight) }
+        check(materials.count==3 && materials.allSatisfy(\.isLight),"a light page gets the light material, also for the loading view and the cover")
+        _=await js(web,"document.documentElement.style.colorScheme='dark'")
+        await wait { !materials.contains(where: \.isLight) }
+        check(!materials.contains(where: \.isLight),"a dark page gets the dark material again")
+
         let frame=panel.frame
         _=await js(web,"webkit.messageHandlers.quickChat.postMessage({type:'drag'})")
         try? await Task.sleep(for:.milliseconds(200))

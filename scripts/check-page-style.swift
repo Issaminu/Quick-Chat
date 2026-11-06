@@ -181,6 +181,19 @@ enum PageStyleCheck {
                 if !result[name]! { failures += 1 }
             }
         }
+        // Light mode: the primary button turns black with a white icon.
+        let lightButton = try await web.evaluateJavaScript("""
+            (() => {
+                document.documentElement.style.colorScheme = 'light';
+                const send = [...document.querySelectorAll('.send')].find(e => e.checkVisibility());
+                const ok = getComputedStyle(send).backgroundColor === 'rgb(0, 0, 0)' && getComputedStyle(send).color === 'rgb(255, 255, 255)';
+                document.documentElement.style.colorScheme = 'dark';
+                return ok;
+            })()
+            """) as? Bool == true
+        print("\(lightButton ? "PASS" : "FAIL") light mode: the primary button is black with a white icon")
+        if !lightButton { failures += 1 }
+
         // Saved drafts: the script removes only the draft entries, once per session.
         let draftsCleared = try await web.callAsyncJavaScript("""
             const db = await new Promise(resolve => { const r = indexedDB.open("codex-browser-host", 1); r.onupgradeneeded = () => r.result.createObjectStore("records"); r.onsuccess = () => resolve(r.result); });

@@ -154,10 +154,7 @@ final class QuickChatController: NSObject {
         panel.resetSizeShortcut = resetSizeShortcut
         panel.maximizeShortcut = maximizeShortcut
 
-        let background = NSVisualEffectView()
-        background.material = .underWindowBackground
-        background.blendingMode = .behindWindow
-        background.state = .active
+        let background = PanelMaterialView()
         // As the window's content view, the mask also gives the window its rounded shape and
         // shadow; without it the shadow stays rectangular and the corners look light.
         background.maskImage = Self.roundedMask(radius: CGFloat(QuickChatPageStyle.windowCornerRadius))
@@ -427,6 +424,10 @@ final class QuickChatController: NSObject {
         guard let panel, let pageIsDark else { return }
         let systemIsDark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         panel.appearance = pageIsDark == systemIsDark ? nil : NSAppearance(named: pageIsDark ? .darkAqua : .aqua)
+        // The loading view and the resize cover match the panel's background.
+        for case let view as PanelMaterialView in [panel.contentView] + (panel.contentView?.subviews ?? []) {
+            view.isLight = !pageIsDark
+        }
     }
 
     /// Moves the panel with the mouse while the button that the page reported stays down.
@@ -1132,17 +1133,41 @@ final class HeaderButton: NSButton {
     }
 }
 
-/// Covers the page with the panel's material and a spinner while a page loads. It stops when
-/// the page is ready, or after 15 seconds. A drag on it moves the panel.
-final class LoadingView: NSVisualEffectView {
-    private let spinner = NSProgressIndicator()
-    private var timeout: Task<Void, Never>?
+/// The panel's native translucent material. ChatGPT's light colors are made for a white page,
+/// so in the light theme a lighter material with a white tint keeps its gray text and icons
+/// readable over any window behind the panel. The dark theme shows the material alone.
+class PanelMaterialView: NSVisualEffectView {
+    private let tint = NSView()
+    var isLight = false {
+        didSet {
+            material = isLight ? .popover : .underWindowBackground
+            tint.layer?.backgroundColor = isLight ? NSColor.white.withAlphaComponent(0.7).cgColor : nil
+        }
+    }
 
     init() {
         super.init(frame: .zero)
         material = .underWindowBackground
         blendingMode = .behindWindow
         state = .active
+        tint.wantsLayer = true
+        tint.frame = bounds
+        tint.autoresizingMask = [.width, .height]
+        addSubview(tint)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+}
+
+/// Covers the page with the panel's material and a spinner while a page loads. It stops when
+/// the page is ready, or after 15 seconds. A drag on it moves the panel.
+final class LoadingView: PanelMaterialView {
+    private let spinner = NSProgressIndicator()
+    private var timeout: Task<Void, Never>?
+
+    override init() {
+        super.init()
         isHidden = true
         spinner.style = .spinning
         spinner.controlSize = .small
@@ -1192,12 +1217,9 @@ final class LoadingView: NSVisualEffectView {
 }
 
 /// The panel's material over the page while the panel changes its size. It takes no clicks.
-final class ResizeCover: NSVisualEffectView {
-    init() {
-        super.init(frame: .zero)
-        material = .underWindowBackground
-        blendingMode = .behindWindow
-        state = .active
+final class ResizeCover: PanelMaterialView {
+    override init() {
+        super.init()
         alphaValue = 0
     }
 

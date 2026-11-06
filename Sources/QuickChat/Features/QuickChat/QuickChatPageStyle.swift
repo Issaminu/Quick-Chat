@@ -88,8 +88,9 @@ enum QuickChatPageStyle {
             --composer-layout-surface-backdrop-filter: none !important;
             --composer-border-radius: var(--quick-chat-composer-radius) !important;
             --radius-token-composer-single-line: var(--quick-chat-composer-radius) !important;
-            --color-background-composer-primary: #fff !important;
-            --color-text-composer-primary: #000 !important;
+            /* The primary button is white with a black icon in dark mode, black with a white icon in light mode. */
+            --color-background-composer-primary: light-dark(#000, #fff) !important;
+            --color-text-composer-primary: light-dark(#fff, #000) !important;
         }
         form[data-chatgpt-composer] [data-composer-body] { border-radius: var(--quick-chat-composer-radius) !important; }
         /* While the composer's text overflows, space below the last line lets it scroll above the
