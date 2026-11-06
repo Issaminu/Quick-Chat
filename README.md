@@ -55,50 +55,33 @@ Quick Chat works next to the new ChatGPT desktop app, and it can free ⌥Space f
 
 ## Install
 
-**With an AI assistant:** tell Claude, ChatGPT or another assistant:
-*"Read https://github.com/Issaminu/Quick-Chat/blob/main/INSTALL.md and help me install Quick Chat."*
-[INSTALL.md](INSTALL.md) gives the assistant step-by-step instructions for the two options below.
+Quick Chat is built on your own Mac, from this source. There is no prebuilt download: macOS does not quarantine an app that you build yourself, so it opens without the "could not verify" warning, and you run only code that you can read.
 
-### Download
+**With an AI assistant (recommended):** tell Claude, ChatGPT or another coding assistant:
+*"Read https://github.com/Issaminu/Quick-Chat/blob/main/INSTALL.md and install Quick Chat."*
+[INSTALL.md](INSTALL.md) gives the assistant step-by-step instructions: it checks your Mac, builds the app, installs it, and helps with the first run.
 
-1. Get `Quick-Chat-<version>.zip` from the [releases](https://github.com/Issaminu/Quick-Chat/releases). It is a universal app (Apple silicon and Intel) for macOS 14 Sonoma or later.
-2. Double-click the zip, then drag **Quick Chat.app** into **Applications**. Open it from Applications, not from Downloads.
-3. The first time, macOS shows *"Apple could not verify 'Quick Chat' is free of malware…"*. Click **Done**.
-4. Open **System Settings → Privacy & Security**, go to **Security**, and click **Open Anyway** next to "Quick Chat was blocked…". Confirm with **Open Anyway** and your login password. The button shows for about one hour after the blocked launch. If you do not see it, open the app again.
-
-   Or, in Terminal, after you move the app to Applications:
-
-   ```sh
-   xattr -dr com.apple.quarantine "/Applications/Quick Chat.app"
-   ```
-
-Quick Chat then shows in the menu bar. It has no Dock icon.
-
-**Why the warning?** GitHub Actions builds each release from the tagged source. But the release is not signed with an Apple Developer ID and not notarized by Apple, so macOS warns about it. On macOS 15 and later, Control-click → Open does not skip the warning. If you do not want to trust a prebuilt app, [build it yourself](#build-from-source).
-
-**Verify the download** (optional): put the matching `.sha256` file in the same folder, then:
-
-```sh
-cd ~/Downloads && shasum -a 256 -c Quick-Chat-<version>.zip.sha256
-```
-
-**Update:** quit Quick Chat, put the new app in Applications, and do the Open Anyway step again.
-
-### Build from source
-
-You need macOS 14 or later and Swift 6.0 or later. Xcode 16 or later is recommended. The Command Line Tools alone (`xcode-select --install`) can build for one architecture. If `swift build` fails with "Unknown error parsing property list", install Xcode.
+**By hand:** you need macOS 14 or later and Swift 6.0 or later. Xcode 16 or later is recommended. The Command Line Tools alone (`xcode-select --install`) can build for one architecture. If `swift build` fails with "Unknown error parsing property list", install Xcode.
 
 ```sh
 git clone https://github.com/Issaminu/Quick-Chat.git
 cd Quick-Chat
-make            # build and sign "build/Quick Chat.app"
+make install    # build, then copy to /Applications (or: make install PREFIX=~/Applications)
+open "/Applications/Quick Chat.app"
+```
+
+Other commands:
+
+```sh
+make            # build and sign "build/Quick Chat.app" only
 make run        # build, quit a running copy, and open the new one
-make install    # copy to /Applications (or: make install PREFIX=~/Applications)
-make uninstall  # remove it again
+make uninstall  # remove the app from /Applications
 make clean      # remove .build and build/
 ```
 
-macOS does not quarantine apps that you build yourself, so Gatekeeper does not block them.
+**Update:** `git pull && make install` in the clone.
+
+Quick Chat shows in the menu bar. It has no Dock icon.
 
 ## Use it
 
@@ -178,7 +161,7 @@ The ChatGPT app writes the same "unbound" entry itself when it finds a shortcut 
 
 Quick Chat needs no Accessibility or Automation access. macOS asks for the **microphone** the first time you use voice, and for the **camera** when you take a photo or share video.
 
-Release builds, and local builds without an Apple Development certificate, are signed ad-hoc. macOS then identifies the app by the hash of its code, so after each update it can ask again. To clear old entries:
+Builds without an Apple Development certificate are signed ad-hoc. macOS then identifies the app by the hash of its code, so after each rebuild it can ask again. To clear old entries:
 
 ```sh
 tccutil reset Microphone dev.shuaibird.quickchat
@@ -214,6 +197,7 @@ swiftc -swift-version 6 Sources/QuickChat/Features/QuickChat/QuickChatPageStyle.
 
 - `check-panel.py` builds the real panel in an isolated test app with a local page that has the same hooks as chatgpt.com. It checks the buttons, the shortcuts, the title bar, the size changes and the position.
 - `check-page-style.swift` checks the style on a local page: transparency, insets, corners, the message cut and fade, the hidden toolbars and the scroll bar.
+- GitHub Actions builds the app and runs `check-page-style.swift` and `check-panel.py` on each push and pull request (`.github/workflows/checks.yml`).
 - `check-live.py` checks the style on the real chatgpt.com, with your Quick Chat session. It sends no messages. Run it when ChatGPT changes its page, to see which part lost its hook. Quit Quick Chat first.
 
   ```sh
@@ -231,7 +215,7 @@ Build options (environment variables for `make` or `scripts/build-app.sh`):
 
 ### Releasing
 
-The tag is the version. `git tag -a v0.3.0 -m "Quick Chat 0.3.0" && git push origin v0.3.0` starts `.github/workflows/release.yml`. The workflow builds a universal, ad-hoc-signed app, checks it, and attaches `Quick-Chat-0.3.0.zip` and its `.sha256` to a GitHub release. A tag with a `-` (for example `v0.4.0-beta.1`) makes a prerelease. To test without a release, run the workflow by hand (`gh workflow run release.yml -f version=0.3.0-test`). It then uploads the zip as a workflow artifact.
+This repository publishes no prebuilt app. `.github/workflows/release.yml` can build a universal, ad-hoc-signed app from a `v*` tag; it is there for a future release that is signed with an Apple Developer ID and notarized, so that it opens without a warning. To test it without a release, run it by hand (`gh workflow run release.yml -f version=0.3.0-test`); it uploads the zip as a workflow artifact.
 
 ## Credits
 

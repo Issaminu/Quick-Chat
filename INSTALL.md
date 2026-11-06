@@ -20,9 +20,9 @@ on ⌥Space. Repository: `https://github.com/Issaminu/Quick-Chat`. Bundle id:
 - **Explain before you act.** Say what each command does before running it, or before asking
   the user to run it if you can't run commands yourself.
 - **Never** disable Gatekeeper system-wide (`spctl --master-disable`, `--global-disable`) and
-  never use `sudo`. Neither is needed.
-- Removing the quarantine flag from Quick Chat is the user's decision. Explain what it means
-  (step R4) and get a yes first.
+  never use `sudo`. Neither is needed: an app that is built on the user's Mac is not
+  quarantined, so Gatekeeper does not block it.
+- There is no prebuilt download for this repository. Always build from source.
 - Don't edit `~/.codex/keybindings.json` by hand. Quick Chat manages its own entry there.
 - If a step fails, show the user the exact error and use [Troubleshooting](#troubleshooting)
   before trying anything else.
@@ -36,83 +36,11 @@ uname -m                  # arm64 (Apple silicon) or x86_64 (Intel); both are su
 
 If macOS is older than 14, stop: Quick Chat won't run there.
 
-### Step 1: pick a path
-
-Ask the user which they want, and recommend the first unless they say otherwise:
-
-1. **Download the release** (recommended for most people): a few minutes, no developer tools.
-   macOS shows a one-time "could not verify" warning because the app isn't notarized.
-2. **Build from source**: for people who'd rather not run a prebuilt binary or who want to
-   change the code. Needs Xcode (or the Command Line Tools) and takes longer, but there's no
-   Gatekeeper warning.
+Then build and install Quick Chat from source (steps 1 to 3).
 
 ---
 
-## Path A: download the release
-
-**R1. Download the latest zip and its checksum** into a fresh folder:
-
-```sh
-mkdir -p ~/Downloads/quick-chat && cd ~/Downloads/quick-chat
-api=https://api.github.com/repos/Issaminu/Quick-Chat/releases/latest
-for url in $(curl -fsSL "$api" | grep -oE '"browser_download_url": *"[^"]+\.zip(\.sha256)?"' | grep -oE 'https://[^"]+'); do
-  curl -fLO "$url"
-done
-ls
-```
-
-You should see `Quick-Chat-<version>.zip` and `Quick-Chat-<version>.zip.sha256`. If the API is
-rate-limited or unreachable, have the user download both files by hand from
-`https://github.com/Issaminu/Quick-Chat/releases/latest`. If the repository has no release yet, use Path B.
-
-**R2. Verify the checksum:**
-
-```sh
-shasum -a 256 -c Quick-Chat-*.zip.sha256
-```
-
-It must print `OK`. If it doesn't, delete the files and stop; don't install a mismatched zip.
-
-**R3. Unzip and move to Applications.** If Quick Chat is already running (updating), quit it
-first: menu-bar icon → **Quit Quick Chat**, or `pkill -x QuickChat`.
-
-```sh
-ditto -x -k Quick-Chat-*.zip .
-rm -rf "/Applications/Quick Chat.app"
-mv "Quick Chat.app" /Applications/
-```
-
-The app must run from Applications, not Downloads.
-
-**R4. Get past Gatekeeper (one time per version).** Explain first: *the release is built by
-GitHub Actions from the public source, but it isn't signed with an Apple Developer ID or
-notarized, so macOS blocks the first launch.* Then offer two ways:
-
-- **Terminal (quicker).** With the user's OK:
-
-  ```sh
-  xattr -dr com.apple.quarantine "/Applications/Quick Chat.app"
-  open "/Applications/Quick Chat.app"
-  ```
-
-- **System Settings (no Terminal).** Walk the user through it:
-  1. Open **Quick Chat** from Applications. macOS says *"Apple could not verify 'Quick Chat' is
-     free of malware…"*. Click **Done**.
-  2. Open **System Settings → Privacy & Security**, scroll to **Security**, click
-     **Open Anyway** next to "Quick Chat was blocked…", then confirm with **Open Anyway** and
-     the login password.
-  3. The button only shows for about an hour after the blocked launch. If it's missing, open
-     the app once more and check again.
-
-  On macOS 15 and later, Control-click → Open no longer skips this.
-
-Then continue with [First run](#first-run).
-
----
-
-## Path B: build from source
-
-**B1. Check the toolchain:**
+### Step 1: check the toolchain
 
 ```sh
 xcode-select -p
@@ -121,14 +49,13 @@ swift --version   # needs Swift 6.0 or later
 
 - If `xcode-select -p` fails, the user needs developer tools. Recommend installing **Xcode 16
   or later** from the App Store (most reliable). The Command Line Tools
-  (`xcode-select --install`) are smaller and can work, but see the plist error under
-  Troubleshooting.
+  (`xcode-select --install`) are smaller and can work, but see the plist error under Troubleshooting.
 - If Xcode is installed but `swift --version` reports an older compiler, the active developer
   directory may be wrong; have the user pick the newer Xcode in Xcode → Settings → Locations
   → Command Line Tools.
 - The first time Xcode is installed, it may need its license accepted: open Xcode once.
 
-**B2. Clone and build:**
+### Step 2: clone and build
 
 ```sh
 git clone https://github.com/Issaminu/Quick-Chat.git
@@ -138,7 +65,7 @@ make
 
 This writes `build/Quick Chat.app`. The first build takes a minute or two.
 
-**B3. Install and open:**
+### Step 3: install and open
 
 ```sh
 make install                       # copies to /Applications and quits any running copy
@@ -188,14 +115,12 @@ choose Quick Chat.
 
 | Symptom | Fix |
 | --- | --- |
-| "Quick Chat is damaged and can't be opened" | The zip was unpacked by a tool that broke the signature. Re-download, unzip with Finder or `ditto` (step R3), then do step R4. |
-| "Open Anyway" button not in Privacy & Security | It only shows for about an hour after a blocked launch. Open the app again, then look again. |
 | Nothing visible after opening | It's a menu-bar app; look for the icon, which can be hidden behind the notch. `pgrep -x QuickChat` confirms it's running. |
 | ⌥Space does nothing | Turn on **Quick Chat** in the menu. If ChatGPT still grabs ⌥Space, choose **Restart ChatGPT to Apply**. Another app (Raycast, Alfred, input-source switching) may also own ⌥Space; pick a different shortcut with **Change Shortcut…**. |
-| `swift build` fails with "Unknown error parsing property list" | Happens with the Command Line Tools alone. Install Xcode and select it (B1). |
+| `swift build` fails with "Unknown error parsing property list" | Happens with the Command Line Tools alone. Install Xcode and select it (step 1). |
 | `UNIVERSAL=1 make` fails | Universal builds need full Xcode, and a normal `make` is fine for one Mac. |
-| `swift: command not found` / `xcrun: error: invalid active developer path` | Developer tools are missing; see B1. |
-| Microphone or camera keeps being asked for after an update | Expected for ad-hoc-signed builds. To clear stale entries: `tccutil reset Microphone dev.shuaibird.quickchat` and `tccutil reset Camera dev.shuaibird.quickchat`. |
+| `swift: command not found` / `xcrun: error: invalid active developer path` | Developer tools are missing; see step 1. |
+| Microphone or camera keeps being asked for after an update | Expected for ad-hoc-signed builds (no Apple Development certificate; see step 3). To clear stale entries: `tccutil reset Microphone dev.shuaibird.quickchat` and `tccutil reset Camera dev.shuaibird.quickchat`. |
 | Want to remove it | Quit from the menu (this restores ChatGPT's shortcut), then delete `/Applications/Quick Chat.app` (or `make uninstall` in a clone). To also clear settings: `defaults delete dev.shuaibird.quickchat` and `rm -rf ~/Library/Application\ Support/ChatGPTCompanion`. |
 
 For anything else, point the user to the

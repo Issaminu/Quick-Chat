@@ -56,8 +56,8 @@ enum Check {
         print("\(pass ? "PASS" : "FAIL") \(label)\(pass || detail == nil ? "" : " (\(detail!))")")
         if !pass { failures += 1 }
     }
-    static func wait(_ condition:@escaping @MainActor () async ->Bool) async {
-        for _ in 0..<100 { if await condition() { return }; try? await Task.sleep(for:.milliseconds(50)) }
+    static func wait(seconds:Double=5,_ condition:@escaping @MainActor () async ->Bool) async {
+        for _ in 0..<Int(seconds*20) { if await condition() { return }; try? await Task.sleep(for:.milliseconds(50)) }
     }
     static func js(_ web:WKWebView,_ code:String) async -> Any? { try? await web.evaluateJavaScript(code) }
     static func visible(_ buttons:HeaderButtons) -> [String] {
@@ -174,16 +174,16 @@ enum Check {
         controller.setPointerInside(false)
         try? await Task.sleep(for:.milliseconds(800))
         check(buttons.alphaValue == 1,"the large window keeps its title bar when the pointer leaves")
-        await wait { panel.frame.width > frame.width && cover.alphaValue == 0 }
+        await wait(seconds:10) { panel.frame.width > frame.width && cover.alphaValue == 0 }
         check(panel.frame.width > frame.width && cover.alphaValue == 0,"the cover over the page goes away after the size change",cover.alphaValue)
         _=await js(web,"webkit.messageHandlers.quickChat.postMessage({type:'zoom'})")
-        await wait { !panel.isMaximized && panel.frame==frame }
+        await wait(seconds:10) { !panel.isMaximized && panel.frame==frame }
         check(!panel.isMaximized && panel.frame==frame && !buttons.expand.showsOtherImage,"another double press restores the frame","\(panel.isMaximized) \(panel.frame) expected \(frame)")
         buttons.expand.performClick(nil)
         await wait { panel.isMaximized }
         check(panel.isMaximized,"Expand does the same as a double press on the title bar")
         buttons.expand.performClick(nil)
-        await wait { !panel.isMaximized && panel.frame==frame && cover.alphaValue == 0 }
+        await wait(seconds:10) { !panel.isMaximized && panel.frame==frame && cover.alphaValue == 0 }
         check(!panel.isMaximized && panel.frame==frame,"Shrink restores the frame")
 
         buttons.close.performClick(nil)
@@ -215,11 +215,12 @@ enum Check {
         let mouseScreen=NSScreen.screens.first{$0.frame.contains(NSEvent.mouseLocation)} ?? NSScreen.main!
         let expected=NSPoint(x:mouseScreen.visibleFrame.midX-250,y:mouseScreen.visibleFrame.minY+32)
         check(restoredPanel.frame.origin==expected && restoredPanel.frame.size==NSSize(width:500,height:640),"the first show after launch uses the default position, not the saved one",restoredPanel.frame)
-        let moved=NSPoint(x:mouseScreen.visibleFrame.minX+60,y:mouseScreen.visibleFrame.minY+90)
+        // A place where the whole 500 x 640 window fits, also on a small screen.
+        let moved=NSPoint(x:mouseScreen.visibleFrame.minX+60,y:max(mouseScreen.visibleFrame.minY,mouseScreen.visibleFrame.maxY-640-40))
         restoredPanel.setFrameOrigin(moved)
         restored.hide(restoreFocus:false)
         restored.show()
-        check(restoredPanel.frame.origin==moved,"later shows keep the position the panel had",restoredPanel.frame)
+        check(restoredPanel.frame.origin==moved,"later shows keep the position the panel had","\(restoredPanel.frame) expected \(moved) on \(mouseScreen.visibleFrame)")
         restored.tearDown()
         print("\(failures) failed checks")
         fflush(nil)

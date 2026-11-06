@@ -108,14 +108,18 @@ final class QuickChatPanel: NSPanel {
             then(self)
             return
         }
+        // A newer size change cancels this one: it then stops at its next step, and the newer one
+        // sets its own frame and keeps the cover until its own frame is drawn.
         frameTransition = Task { [weak self] in
             guard let self else { return }
             await Self.fade(cover, to: 1, duration: 0.1)
+            guard !Task.isCancelled else { return }
             self.applyOwnFrame(frame, animate: true)
             then(self)
             await self.waitForContent?(frame.width)
+            guard !Task.isCancelled else { return }
             await Self.fade(cover, to: 0, duration: 0.2)
-            self.frameTransition = nil
+            if !Task.isCancelled { self.frameTransition = nil }
         }
     }
 
