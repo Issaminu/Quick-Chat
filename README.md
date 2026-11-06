@@ -33,7 +33,7 @@ Quick Chat fills the gap the simple way: it shows chatgpt.com in a small floatin
 
 ## What it does
 
-Two features, both off until you turn them on from the menu-bar icon. Your choices are remembered.
+Quick Chat enables its global shortcut automatically when the app launches; the popup stays closed until you use the shortcut. Disable Show Mini is off by default. Your on/off choices in the menu bar are remembered.
 
 ### Quick Chat
 

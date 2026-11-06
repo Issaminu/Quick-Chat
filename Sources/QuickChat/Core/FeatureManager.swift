@@ -15,6 +15,7 @@ final class FeatureManager {
             QuickChatFeature(showMini: showMini), // core feature, listed first
             DisableShowMiniFeature(showMini: showMini),
         ]
+        defaults.register(defaults: [key("miniChat"): true])
     }
 
     private let showMini: ShowMiniController
@@ -26,7 +27,7 @@ final class FeatureManager {
 
     func isPreferredOn(_ feature: any Feature) -> Bool { defaults.bool(forKey: key(feature.id)) }
 
-    /// Enables every feature the user left switched on last time.
+    /// Starts Quick Chat by default and restores each saved on/off choice.
     func start() {
         installSignalHandlers()
         for feature in features where isPreferredOn(feature) {
