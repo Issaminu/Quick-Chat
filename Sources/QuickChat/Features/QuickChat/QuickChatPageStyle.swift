@@ -198,7 +198,12 @@ enum QuickChatPageStyle {
                 const current = JSON.stringify(state);
                 if (current !== previous) { previous = current; post(state); }
             };
-            const schedule = () => { if (!pending) { pending = true; requestAnimationFrame(report); } };
+            // A hidden page (the panel loads before it first shows) gets no animation frames.
+            const schedule = () => {
+                if (pending) return;
+                pending = true;
+                if (document.hidden) setTimeout(report, 100); else requestAnimationFrame(report);
+            };
             new MutationObserver(schedule).observe(document.documentElement, {
                 childList: true, subtree: true, attributes: true,
                 attributeFilter: ["class", "style", "hidden", "open", "aria-expanded", "aria-hidden", "data-state", "data-theme"]

@@ -51,6 +51,12 @@ final class QuickChatController: NSObject {
         }
     }
 
+    /// Builds the panel without showing it, so ChatGPT loads in the background and is ready
+    /// when the panel first shows.
+    func preload() {
+        if panel == nil { _ = makePanel() }
+    }
+
     func show() {
         let panel = self.panel ?? makePanel()
         let front = NSWorkspace.shared.frontmostApplication

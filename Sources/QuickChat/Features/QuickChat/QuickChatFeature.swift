@@ -32,6 +32,7 @@ final class QuickChatFeature: Feature {
             throw error
         }
         isEnabled = true
+        chat.preload()
         log.info("Enabled with shortcut \(self.shortcut.displayString, privacy: .public)")
     }
 
