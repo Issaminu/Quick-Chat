@@ -27,6 +27,7 @@ This is a fork of [shuaibird/Quick-Chat](https://github.com/shuaibird/Quick-Chat
 - **Only the chat.** The empty chat shows only the composer. Greetings, suggestions, notices, the disclaimer and the selection toolbars are hidden.
 - **The title bar comes when you need it.** In the small panel, it shows while the pointer is over the panel, and fades out 0.5 seconds after the pointer leaves. Then the messages use its space. In the large window, it always shows.
 - **Small or large.** **Expand** (or a double-click on the title bar, or ⌘F) makes the panel a large window with the same chat. **Shrink** makes it small again. The page never shows a half-drawn layout during the change.
+- **Throw it to the side.** Drag the title bar fast and let go while you move, and the panel flies to the left or right edge of the screen, like ChatGPT's own companion window. A slow drag, or a drag that stops before you let go, moves the panel only as far as the pointer.
 - **Temporary chats.** One click starts a chat that does not go into your history. The icon fills while a temporary chat is on.
 - **Ready when you are.** ChatGPT loads in the background when the app starts. While a page loads, the panel shows a spinner instead of a half-loaded page.
 - **Interactive answers.** The panel is ChatGPT on the web, so it shows ChatGPT's interactive answers: diagrams, simulations, sliders and buttons inside the chat. ChatGPT Classic shows only text and standard formatting.
@@ -122,7 +123,7 @@ In the small panel, the title bar shows while the pointer is over the panel, and
 | Top right | Expand / Shrink | Makes the panel a large window with the same chat, or small again (same as ⌘F). |
 | Top right | Close | Closes the panel (same as Esc). |
 
-Drag an empty part of the title bar to move the panel. Drag an edge to resize it. Each time the app starts, the panel first opens at its default place. It keeps its size across launches.
+Drag an empty part of the title bar to move the panel. Throw it (a fast drag) to send it to a side of the screen. Drag an edge to resize it. Each time the app starts, the panel first opens at its default place. It keeps its size across launches.
 
 In the large window, ChatGPT docks its row of icons on the left. Point at them to see the sidebar.
 

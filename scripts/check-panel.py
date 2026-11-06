@@ -168,6 +168,25 @@ enum Check {
         _=await js(web,"webkit.messageHandlers.quickChat.postMessage({type:'drag'})")
         try? await Task.sleep(for:.milliseconds(200))
         check(panel.frame==frame,"a drag message without a pressed mouse button does nothing")
+
+        // Throws, with the measures of ChatGPT's own companion window: a screen area like a
+        // 1512 x 868 usable area, and a 440 x 540 panel.
+        let area=NSRect(x:0,y:81,width:1512,height:868)
+        let start=NSRect(x:536,y:245,width:440,height:540)
+        let moves:(CGFloat,CGFloat)->[PanelThrow.Sample]={vx,vy in (0...10).map{i in PanelThrow.Sample(time:Double(i)*0.008,point:NSPoint(x:vx*CGFloat(i)*0.008,y:vy*CGFloat(i)*0.008))}}
+        let fast=PanelThrow.velocity(moves(3000,0),releasedAt:0.08)
+        check(abs(fast.dx-3000)<1 && fast.dy==0,"the throw speed comes from the pointer's last moves",fast)
+        check(PanelThrow.velocity(moves(3000,0)+[PanelThrow.Sample(time:0.09,point:NSPoint(x:240,y:0))],releasedAt:0.09).dx>2999,"the release at the last position does not lower the throw speed")
+        check(PanelThrow.velocity(moves(3000,0),releasedAt:0.25) == .zero,"a pause before the release gives no throw speed")
+        check(PanelThrow.target(frame:start,velocity:CGVector(dx:450,dy:0),dragged:300,area:area)==nil,"a slow drag is not a throw")
+        check(PanelThrow.target(frame:start,velocity:CGVector(dx:3000,dy:0),dragged:80,area:area)==nil,"a short drag is not a throw")
+        check(PanelThrow.target(frame:start,velocity:CGVector(dx:3000,dy:0),dragged:150,area:area)==NSPoint(x:1052,y:245),"a fast throw to the right ends 20 points from the right edge")
+        check(PanelThrow.target(frame:start,velocity:CGVector(dx:-3000,dy:0),dragged:150,area:area)==NSPoint(x:20,y:245),"a fast throw to the left ends 20 points from the left edge")
+        check(PanelThrow.target(frame:start.offsetBy(dx:-136,dy:0),velocity:CGVector(dx:0,dy:-1500),dragged:150,area:area)==NSPoint(x:20,y:101),"a throw down goes to the bottom on the nearer side")
+        check(PanelThrow.target(frame:start,velocity:CGVector(dx:3000,dy:0),dragged:150,area:NSRect(x:0,y:81,width:470,height:868))==nil,"no throw when the panel does not fit the screen")
+        let ends=[CGFloat(0),0.1,0.2,0.4].map{PanelThrow.offset(from:-500,speed:3000,elapsed:$0)}
+        check(ends[0] == -500 && ends[1]<ends[0]+400 && ends.allSatisfy{$0<=0} && abs(ends[3])<20,"the throw slows down to the target in about 0.35 seconds, without passing it",ends)
+        check(PanelThrow.offset(from:-50,speed:3000,elapsed:0.05)<=0,"a throw near the edge does not pass the target")
         _=await js(web,"webkit.messageHandlers.quickChat.postMessage({type:'zoom'})")
         await wait { panel.isMaximized }
         check(panel.isMaximized && buttons.expand.showsOtherImage && !buttons.expand.isActive,"double press on the title bar maximizes, and Expand becomes Shrink (not an on state)")

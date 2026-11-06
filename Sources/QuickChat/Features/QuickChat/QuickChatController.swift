@@ -453,21 +453,12 @@ final class QuickChatController: NSObject {
         }
     }
 
-    /// Moves the panel with the mouse while the button that the page reported stays down.
+    /// Moves the panel with the mouse while the button that the page reported stays down. A fast
+    /// drag throws the panel to a side of the screen (see PanelThrow).
     private func dragPanel() {
-        guard let panel, let webView, NSEvent.pressedMouseButtons & 1 == 1,
-              let down = NSEvent.mouseEvent(with: .leftMouseDown, location: panel.mouseLocationOutsideOfEventStream,
-                                            modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                                            windowNumber: panel.windowNumber, context: nil, eventNumber: 0,
-                                            clickCount: 1, pressure: 1) else { return }
-        panel.performDrag(with: down)
+        guard let panel, let webView else { return }
         // The page saw the press but the drag used the release; end the press in the page too.
-        if let up = NSEvent.mouseEvent(with: .leftMouseUp, location: panel.mouseLocationOutsideOfEventStream,
-                                       modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                                       windowNumber: panel.windowNumber, context: nil, eventNumber: 0,
-                                       clickCount: 1, pressure: 0) {
-            webView.mouseUp(with: up)
-        }
+        if let up = panel.trackDrag() { webView.mouseUp(with: up) }
     }
 
     private func focusComposer() {

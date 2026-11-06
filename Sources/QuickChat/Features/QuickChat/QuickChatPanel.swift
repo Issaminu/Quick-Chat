@@ -28,6 +28,10 @@ final class QuickChatPanel: NSPanel {
     }
     var isMaximized: Bool { restoreFrame != nil }
     private var frameTransition: Task<Void, Never>?
+    /// A throw in progress (see PanelThrow).
+    var throwMotion: ThrowMotion?
+    /// The left button's press while it is down: where and when it started.
+    var leftPress: PanelThrow.Sample?
     /// Set while the panel changes its own frame, so only user moves/resizes end the maximize.
     private var isSettingFrame = false
 
@@ -102,6 +106,7 @@ final class QuickChatPanel: NSPanel {
     /// cover fades out when the page is laid out at the new size. The title bar buttons stay.
     /// `then` runs right after the frame changes.
     private func setOwnFrame(_ frame: NSRect, then: @escaping (QuickChatPanel) -> Void = { _ in }) {
+        stopThrow()
         frameTransition?.cancel()
         guard isVisible, let cover else {
             applyOwnFrame(frame, animate: false)
@@ -144,6 +149,7 @@ final class QuickChatPanel: NSPanel {
     /// A hide during a size change must not leave the cover on the page for the next show.
     override func orderOut(_ sender: Any?) {
         super.orderOut(sender)
+        stopThrow()
         frameTransition?.cancel()
         frameTransition = nil
         cover?.alphaValue = 0
@@ -203,6 +209,11 @@ final class QuickChatPanel: NSPanel {
     /// than in `performKeyEquivalent` so combos without ⌘ (e.g. ⌥R, F5) work too.
     override func sendEvent(_ event: NSEvent) {
         if event.type == .keyDown, handleLocalShortcut(event) { return }
+        if event.type == .leftMouseDown {
+            leftPress = PanelThrow.Sample(time: event.timestamp, point: Self.screenPoint(of: event) ?? NSEvent.mouseLocation)
+        } else if event.type == .leftMouseUp {
+            leftPress = nil
+        }
         super.sendEvent(event)
     }
 

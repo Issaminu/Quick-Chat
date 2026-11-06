@@ -87,7 +87,7 @@ final class LoadingView: PanelMaterialView {
         })
     }
 
-    override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
+    override func mouseDown(with event: NSEvent) { (window as? QuickChatPanel)?.trackDrag() }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
