@@ -17,11 +17,13 @@ run: app
 	@$(QUIT)
 	open "$(APP)"
 
+# Updates the installed app in place: macOS may protect the app folder in /Applications itself
+# (App Management), so the folder stays and only its contents are replaced.
 install: app
 	@$(QUIT)
 	mkdir -p "$(PREFIX)"
-	rm -rf "$(DEST)"
-	ditto "$(APP)" "$(DEST)"
+	rsync -a --delete "$(APP)/" "$(DEST)/"
+	codesign --verify --deep --strict "$(DEST)"
 	@echo "Installed $(DEST)"
 
 uninstall:
