@@ -7,13 +7,15 @@
 Press ⌥Space in any app, ask a question, read the answer, and go back to your work.
 Every message is a regular ChatGPT chat, not an agent task.
 
+This is a fork of [shuaibird/Quick-Chat](https://github.com/shuaibird/Quick-Chat), with many additional UI changes.
+
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-black?logo=apple)
 ![Swift 6](https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 
-<img src="docs/demo.gif" width="880" alt="Quick Chat demo: a reader presses Option-Space over an article, asks what gravitational lensing is in a temporary chat, reads the streamed answer, expands the panel to a large window, shrinks it again, and presses Esc to go back to the article.">
+<img src="docs/demo.gif" width="880" alt="Quick Chat demo: over an article, a reader presses Option-Space, asks what gravitational lensing is, then asks for an interactive diagram. ChatGPT builds it in the panel. The reader expands the panel to a large window, drags the lensing galaxy, changes its mass with a slider, shrinks the panel, and presses Esc to go back to the article.">
 
-*Read, press ⌥Space, ask, read the answer, go back to reading.* [Watch the full-size video](docs/demo.mp4).
+*Press ⌥Space, ask, get an interactive diagram, explore it in a large window, and go back to reading.*
 
 </div>
 
@@ -27,7 +29,8 @@ Every message is a regular ChatGPT chat, not an agent task.
 - **Small or large.** **Expand** (or a double-click on the title bar, or ⌘F) makes the panel a large window with the same chat. **Shrink** makes it small again. The page never shows a half-drawn layout during the change.
 - **Temporary chats.** One click starts a chat that does not go into your history. The icon fills while a temporary chat is on.
 - **Ready when you are.** ChatGPT loads in the background when the app starts. While a page loads, the panel shows a spinner instead of a half-loaded page.
-- **It is ChatGPT on the web.** You get every new ChatGPT web feature on the day it ships, with your own account and your own models.
+- **Interactive answers.** The panel is ChatGPT on the web, so it shows ChatGPT's interactive answers: diagrams, simulations, sliders and buttons inside the chat. ChatGPT Classic shows only text and standard formatting.
+- **Always up to date.** You get every new ChatGPT web feature on the day it ships, with your own account and your own models.
 
 ## Why this exists
 
