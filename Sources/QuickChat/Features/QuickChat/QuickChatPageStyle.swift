@@ -31,6 +31,8 @@ enum QuickChatPageStyle {
         [data-app-shell-frame], [data-app-shell-workspace]::before { background-color: transparent !important; }
         :is([role="main"], [role="main"] *):has(form[data-chatgpt-composer]) { background-color: transparent !important; }
         [data-thread-scroll-footer] > [aria-hidden="true"] { display: none !important; }
+        /* Interactive answers: the sandbox frame shows the panel's material too (see sandboxFrameScript). */
+        iframe[src*=".web-sandbox.oaiusercontent.com"] { background-color: transparent !important; }
 
         /* Chat pages' title bar: only the sidebar button. The panel adds its own buttons on the right.
            The rest stays in the layout (hidden), because the page measures it to place the
@@ -262,6 +264,22 @@ enum QuickChatPageStyle {
             document.addEventListener("readystatechange", schedule);
             window.addEventListener("load", () => setTimeout(() => { loadedAWhileAgo = true; schedule(); }, 1000));
             report();
+        })();
+        """#
+
+    /// ChatGPT shows interactive answers (diagrams, simulations) in sandbox frames from another
+    /// site, which the page style cannot reach. Their page background is black, so in these frames
+    /// (and the frames inside them) the background becomes transparent, like the panel's page.
+    /// The answer's own panels keep their colors. Other embedded frames do not change.
+    static let sandboxFrameScript = #"""
+        (() => {
+            if (window === window.top) return;
+            const sandbox = origin => /\.web-sandbox\.oaiusercontent\.com$/i.test(new URL(origin).hostname);
+            const origins = [location.origin, ...(location.ancestorOrigins ?? [])].filter(o => o && o !== "null");
+            if (!origins.some(o => { try { return sandbox(o); } catch { return false; } })) return;
+            const style = new CSSStyleSheet();
+            style.replaceSync("html, body { background: transparent !important; }");
+            document.adoptedStyleSheets = [...document.adoptedStyleSheets, style];
         })();
         """#
 
