@@ -153,6 +153,8 @@ enum QuickChatPageStyle {
             border: 2px solid transparent;
             border-right-width: 3px;
             border-radius: 5px;
+            /* A long conversation keeps a thumb that is easy to see and to grab. */
+            min-height: 40px;
             background-clip: padding-box;
             background-color: color-mix(in srgb, CanvasText 45%, transparent);
         }
