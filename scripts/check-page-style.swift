@@ -68,18 +68,18 @@ enum PageStyleCheck {
           <div id="hero"><h1 id="greeting">Any greeting</h1><p>Any description</p></div>
           <div id="composer-block"><div data-home-feed-composer class="contents">
             <form data-chatgpt-composer data-composer-placement="home"><div class="root"><div data-composer-body>
-              <div contenteditable="true"></div><button class="send">↑</button></div></div></form>
+              <div data-rich-text-layout style="max-height:40px; overflow-y:auto"><div contenteditable="true"></div></div><div data-composer-expansion-control><button class="expand" data-composer-expand-toggle>E</button></div><button class="send">↑</button></div></div></form>
           </div><div id="notice">Any notice</div></div>
         </div></template>
         <template id="conversation"><div id="thread">
           <div data-app-action-timeline-scroll>
-            <div class="content"><div id="messages"></div>
+            <div class="content"><div id="code" style="overflow-y:auto; height:40px"><div style="height:200px">code</div></div><div id="messages"></div>
               <div><div class="disclaimer" id="disclaimer" data-markdown-copy="exclude">Any disclaimer</div></div><div class="spacer" aria-hidden="true"></div></div>
             <div class="footer"><div data-thread-scroll-footer>
               <div aria-hidden="true" class="bg-surface"></div>
               <div data-pip-obstacle><button id="scroll-down" class="bg-surface">↓</button>
                 <form data-chatgpt-composer data-composer-placement="thread"><div class="root"><div data-composer-body>
-                  <div contenteditable="true"></div><button class="send">↑</button></div></div></form></div>
+                  <div data-rich-text-layout style="max-height:40px; overflow-y:auto"><div contenteditable="true"></div></div><div data-composer-expansion-control><button class="expand" data-composer-expand-toggle>E</button></div><button class="send">↑</button></div></div></form></div>
             </div></div>
           </div>
         </div></template>
@@ -124,6 +124,8 @@ enum PageStyleCheck {
                 'composer insets are 8 points': rect.left === 8 && innerWidth - rect.right === 8 && innerHeight - rect.bottom === 8,
                 'primary button is white with a black icon': getComputedStyle(send).backgroundColor === 'rgb(255, 255, 255)' && getComputedStyle(send).color === 'rgb(0, 0, 0)',
                 'menus keep their fill': alpha(style('[role="menu"]').backgroundColor) === 255,
+                'composer has no Expand control of its own': !shown(composer.querySelector('[data-composer-expand-toggle]')),
+                'composer text does not stretch at its ends': getComputedStyle(composer.querySelector('[data-rich-text-layout]')).overscrollBehaviorY === 'none',
                 'selection toolbars are hidden, menus are not': !shown($('#ask-toolbar')) && !shown($('#format-toolbar')) && shown($('#model-menu'))
             };
             if ($('#hero')) {
@@ -134,6 +136,7 @@ enum PageStyleCheck {
                 result['messages end at the composer top'] = Math.abs(scroller.getBoundingClientRect().bottom - rect.top) < 1;
                 result['messages fade with the scroll position'] = getComputedStyle(content).maskImage.includes('gradient') &&
                     getComputedStyle(content).animationName === 'quick-chat-follow-scroll';
+                result['a code block passes the scroll on at its ends'] = getComputedStyle($('#code')).overscrollBehaviorY === 'auto';
                 result['message list has a thin scroll bar while it can scroll'] =
                     scroller.offsetWidth - scroller.clientWidth === (scroller.scrollHeight > scroller.clientHeight ? 10 : 0);
                 result['scroll-to-bottom button keeps its fill'] = alpha(style('#scroll-down').backgroundColor) === 255;

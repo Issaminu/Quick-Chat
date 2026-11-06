@@ -92,6 +92,11 @@ enum QuickChatPageStyle {
             --color-text-composer-primary: #000 !important;
         }
         form[data-chatgpt-composer] [data-composer-body] { border-radius: var(--quick-chat-composer-radius) !important; }
+        /* While the composer's text overflows, space below the last line lets it scroll above the
+           text area's bottom fade. */
+        form[data-chatgpt-composer] [data-rich-text-layout][data-overflowing] > [contenteditable="true"] { padding-bottom: 16px !important; }
+        /* The composer's own Expand control: it does not fit in the panel (the panel has Expand). */
+        form[data-chatgpt-composer] [data-composer-expansion-control] { display: none !important; }
 
         /* The same small inset left, right, and below the composer, before and after the first message. */
         :is([role="main"], [role="main"] *):has(form[data-composer-placement="home"]) {
@@ -149,20 +154,23 @@ enum QuickChatPageStyle {
         [data-radix-popper-content-wrapper]:has(> [role="dialog"] > [role="presentation"]),
         body > * > [style*="translateY(-100%)"]:has(> [role="presentation"] > button) { display: none !important; }
 
-        /* No elastic stretch at the ends of a scroll. Only the message list has a scroll bar: a thin
-           rounded thumb at the right edge, like a floating macOS scroll bar, from below the title
-           bar to the composer. WebKit draws it only while the list can scroll. */
-        * { overscroll-behavior: none !important; }
-        :not([data-app-action-timeline-scroll]), *::before, *::after { scrollbar-width: none !important; scrollbar-gutter: auto !important; }
-        :not([data-app-action-timeline-scroll])::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
-        [data-app-action-timeline-scroll] { scrollbar-width: auto !important; scrollbar-color: auto !important; scrollbar-gutter: auto !important; }
-        [data-app-action-timeline-scroll]::-webkit-scrollbar { width: 10px; height: 0; background: transparent; }
-        [data-app-action-timeline-scroll]::-webkit-scrollbar-track {
-            background: transparent;
-            margin-top: var(--app-shell-titlebar-height, 52px);
-            margin-bottom: 4px;
+        /* No elastic stretch at the ends of the page, the message list and the composer's text.
+           Inner scroll areas (such as code blocks) pass a scroll on to the message list at their
+           ends, so they keep the default. */
+        html, body, [data-app-action-timeline-scroll], form[data-chatgpt-composer] [data-rich-text-layout] {
+            overscroll-behavior: none !important;
         }
-        [data-app-action-timeline-scroll]::-webkit-scrollbar-thumb {
+        /* Only the message list and the composer's text have a scroll bar: a thin rounded thumb at
+           the right edge, like a floating macOS scroll bar. WebKit draws it only while the area
+           can scroll. The page styles every scroll bar, which in WebKit gives a fixed one that
+           takes more width, so the two areas go back to the default first. */
+        :not([data-app-action-timeline-scroll], [data-rich-text-layout]), *::before, *::after { scrollbar-width: none !important; scrollbar-gutter: auto !important; }
+        :not([data-app-action-timeline-scroll], [data-rich-text-layout])::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+        :is([data-app-action-timeline-scroll], [data-rich-text-layout]) { scrollbar-width: auto !important; scrollbar-color: auto !important; scrollbar-gutter: auto !important; }
+        :is([data-app-action-timeline-scroll], [data-rich-text-layout])::-webkit-scrollbar { width: 10px; height: 0; background: transparent; }
+        :is([data-app-action-timeline-scroll], [data-rich-text-layout])::-webkit-scrollbar-track { background: transparent; margin-block: 4px; }
+        [data-app-action-timeline-scroll]::-webkit-scrollbar-track { margin-top: var(--app-shell-titlebar-height, 52px); }
+        :is([data-app-action-timeline-scroll], [data-rich-text-layout])::-webkit-scrollbar-thumb {
             border: 2px solid transparent;
             border-right-width: 3px;
             border-radius: 5px;
@@ -171,7 +179,8 @@ enum QuickChatPageStyle {
             background-clip: padding-box;
             background-color: color-mix(in srgb, CanvasText 45%, transparent);
         }
-        [data-app-action-timeline-scroll]::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, CanvasText 60%, transparent); }
+        [data-rich-text-layout]::-webkit-scrollbar-thumb { min-height: 24px; }
+        :is([data-app-action-timeline-scroll], [data-rich-text-layout])::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, CanvasText 60%, transparent); }
         """#
 
     /// Adds the style and a small bridge to the panel: window dragging from the empty title bar
@@ -200,6 +209,49 @@ enum QuickChatPageStyle {
                 event.preventDefault();
                 post({ type: event.detail === 2 ? "zoom" : "drag" });
             }, true);
+
+            // The composer keeps the text cursor in view: after typing, a paste or a cursor move,
+            // its text area scrolls the shortest way that shows the cursor above the area's
+            // bottom fade. The page does not do this after a paste or at a new line.
+            // Where the cursor is: the character before it, or the element next to it (after a
+            // paste the cursor sits between paragraphs).
+            const caretRect = (node, offset) => {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    const range = document.createRange();
+                    if (offset > 0) {
+                        range.setStart(node, offset - 1);
+                        range.setEnd(node, offset);
+                        const rects = range.getClientRects();
+                        if (rects.length) return rects[rects.length - 1];
+                    }
+                    range.setStart(node, offset);
+                    range.collapse(true);
+                    return range.getClientRects()[0] ?? node.parentElement.getBoundingClientRect();
+                }
+                const before = node.childNodes[offset - 1], after = node.childNodes[offset];
+                const next = before ?? after;
+                if (!next) return node.getBoundingClientRect();
+                if (next.nodeType === Node.TEXT_NODE) return caretRect(next, before ? next.length : 0);
+                if (next.nodeType !== Node.ELEMENT_NODE) return node.getBoundingClientRect();
+                const rects = next.getClientRects();
+                return (before ? rects[rects.length - 1] : rects[0]) ?? next.getBoundingClientRect();
+            };
+            const caretInView = () => {
+                const selection = getSelection();
+                if (!selection.rangeCount || !selection.focusNode) return;
+                const node = selection.focusNode;
+                const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+                const area = element?.closest('form[data-chatgpt-composer] [data-rich-text-layout]');
+                if (!area || area.scrollHeight <= area.clientHeight) return;
+                const rect = caretRect(node, selection.focusOffset);
+                const box = area.getBoundingClientRect();
+                const bottom = box.bottom - 20, top = box.top + 4;
+                if (rect.bottom > bottom) area.scrollTop += rect.bottom - bottom;
+                else if (rect.top < top) area.scrollTop -= top - rect.top;
+            };
+            const caretSoon = () => requestAnimationFrame(caretInView);
+            for (const name of ["input", "paste", "keyup"]) document.addEventListener(name, caretSoon, true);
+            document.addEventListener("selectionchange", caretSoon);
 
             // Esc hides the panel. The composer always claims Esc, so the page does not pass it on.
             // While a menu, a dialog, a popup, or the sidebar is open, Esc closes that instead.

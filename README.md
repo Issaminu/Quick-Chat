@@ -149,7 +149,8 @@ Quick Chat changes how chatgpt.com looks inside the panel. It changes only the l
 - **Concentric corners.** The window corners have a 20-point radius. The composer sits 8 points from the sides and the bottom, so its corners have a 12-point radius (20 − 8), with the same center.
 - **A clear message area.** Messages stop at the top edge of the composer and fade out above it, so no text shows beside, below or through the composer. At the top, messages stop at the bottom edge of the title bar.
 - **Native text.** Text uses the system font with the system's font smoothing, and message text is 15 points.
-- **Quiet scrolling.** Only the message list has a scroll bar: a thin rounded thumb inside the right edge. Scrolling does not stretch at the ends.
+- **Quiet scrolling.** The message list and a long draft in the composer have a thin rounded scroll bar inside the right edge. They do not stretch at the ends. A code block scrolls its code first, then the conversation.
+- **The cursor stays in view.** In a long draft, the composer scrolls with the text cursor while you type, paste or move the cursor.
 - **No jumps when the size changes.** During Expand or Shrink, a cover with the panel's material fades in, the window changes its size, and the cover fades out when the page is drawn at the new size.
 
 The style uses only ChatGPT's own semantic attributes (`data-app-shell-*`, `data-composer-*`, `data-thread-*`) and design tokens, never text or generated class names. When ChatGPT changes its page, a part of the style that loses its hook falls back to ChatGPT's own look. The page does not break.
