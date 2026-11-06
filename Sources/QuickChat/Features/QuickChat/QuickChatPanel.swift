@@ -9,8 +9,6 @@ final class QuickChatController: NSObject {
     /// Hosts that stay inside the panel (chat + sign-in flows); other links open in the browser.
     private static let inPanelHosts = ["chatgpt.com", "openai.com", "auth0.com", "google.com", "apple.com",
                                        "microsoftonline.com", "live.com", "microsoft.com"]
-    private static let safariUserAgent =
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
 
     private let log = Log.make("QuickChat")
     private var panel: QuickChatPanel?
@@ -18,6 +16,10 @@ final class QuickChatController: NSObject {
     private var previousApp: NSRunningApplication?
     /// Where each in-flight download is being written, for "reveal in Finder" when it finishes.
     private var downloadDestinations: [ObjectIdentifier: URL] = [:]
+    /// Recent automatic reloads after the web content process died, to stop a crash loop.
+    private var crashReloads: [Date] = []
+    /// Set when crash reloads were given up; the page reloads the next time the panel shows.
+    private var reloadOnShow = false
 
     var isVisible: Bool { panel?.isVisible == true }
 
@@ -48,6 +50,11 @@ final class QuickChatController: NSObject {
         let panel = self.panel ?? makePanel()
         let front = NSWorkspace.shared.frontmostApplication
         if front?.processIdentifier != ProcessInfo.processInfo.processIdentifier { previousApp = front }
+        if reloadOnShow, let webView {
+            reloadOnShow = false
+            crashReloads = []
+            reload(webView)
+        }
         NSApp.activate()
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(webView)
@@ -68,6 +75,8 @@ final class QuickChatController: NSObject {
         panel?.contentView = nil
         panel = nil
         webView = nil
+        crashReloads = []
+        reloadOnShow = false
     }
 
     /// Signs out by clearing the panel's website data (cookies, storage).
@@ -122,8 +131,11 @@ final class QuickChatController: NSObject {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
         config.mediaTypesRequiringUserActionForPlayback = []
+        if let safariURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Safari"),
+           let version = Bundle(url: safariURL)?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
+            config.applicationNameForUserAgent = "Version/\(version) Safari/605.1.15"
+        }
         let webView = WKWebView(frame: .zero, configuration: config)
-        webView.customUserAgent = Self.safariUserAgent
         webView.uiDelegate = self
         webView.navigationDelegate = self
         webView.allowsBackForwardNavigationGestures = true
@@ -231,8 +243,21 @@ extension QuickChatController: WKUIDelegate, WKNavigationDelegate, WKDownloadDel
 
     /// macOS may kill the web content process (often while hidden, under memory pressure), which
     /// leaves the view blank; reload right away so it's ready before the panel is shown again.
+    /// A page that keeps crashing it (3 times in a minute) is left until the panel is next shown.
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        let now = Date()
+        crashReloads.removeAll { now.timeIntervalSince($0) > 60 }
+        guard crashReloads.count < 3 else {
+            log.error("Web content process keeps terminating; reloading when the panel is next shown")
+            reloadOnShow = true
+            return
+        }
+        crashReloads.append(now)
         log.info("Web content process terminated; reloading")
+        reload(webView)
+    }
+
+    private func reload(_ webView: WKWebView) {
         if webView.url != nil { webView.reload() } else { webView.load(URLRequest(url: Self.chatURL)) }
     }
 
@@ -319,8 +344,8 @@ final class QuickChatPanel: NSPanel {
         title = "ChatGPT"
         titleVisibility = .hidden
         titlebarAppearsTransparent = true
-        // No full screen or tiling: the green button shows the plain zoom glyph and only maximizes.
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .fullScreenNone, .fullScreenDisallowsTiling]
+        // Join full-screen spaces without tiling; the green button only maximizes.
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .fullScreenDisallowsTiling]
         for button in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
             standardWindowButton(button)?.isHidden = !Self.trafficLights.contains(button)
         }
@@ -437,9 +462,12 @@ final class QuickChatPanel: NSPanel {
         if isMaximized, !isSettingFrame { endMaximize() }
     }
 
-    /// Runs the Reset Window Size or Maximize action if `event` is its shortcut.
+    /// Runs the Reset Window Size or Maximize action if `event` is its shortcut. Key repeats
+    /// are swallowed, so holding the shortcut doesn't toggle maximize over and over.
     private func handleLocalShortcut(_ event: NSEvent) -> Bool {
         guard let pressed = Shortcut(event: event) else { return false }
+        guard pressed == resetSizeShortcut || pressed == maximizeShortcut else { return false }
+        if event.isARepeat { return true }
         if pressed == resetSizeShortcut {
             resetSize()
         } else if pressed == maximizeShortcut {
