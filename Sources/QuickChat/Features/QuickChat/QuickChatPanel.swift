@@ -13,7 +13,11 @@ final class QuickChatController: NSObject {
     private let log = Log.make("QuickChat")
     private var panel: QuickChatPanel?
     private var webView: WKWebView?
-    private weak var dragRegion: DraggableView?
+    private var headerButtons: HeaderButtons?
+    private var urlObservation: NSKeyValueObservation?
+    private var systemAppearanceObservation: NSKeyValueObservation?
+    /// The page's theme, from its last state message.
+    private var pageIsDark: Bool?
     private var previousApp: NSRunningApplication?
     /// Where each in-flight download is being written, for "reveal in Finder" when it finishes.
     private var downloadDestinations: [ObjectIdentifier: URL] = [:]
@@ -76,6 +80,10 @@ final class QuickChatController: NSObject {
         panel?.contentView = nil
         panel = nil
         webView = nil
+        headerButtons = nil
+        urlObservation = nil
+        systemAppearanceObservation = nil
+        pageIsDark = nil
         crashReloads = []
         reloadOnShow = false
     }
@@ -104,26 +112,30 @@ final class QuickChatController: NSObject {
         background.material = .underWindowBackground
         background.blendingMode = .behindWindow
         background.state = .active
+        // As the window's content view, the mask also gives the window its rounded shape and
+        // shadow; without it the shadow stays rectangular and the corners look light.
+        background.maskImage = Self.roundedMask(radius: CGFloat(QuickChatPageStyle.windowCornerRadius))
         background.wantsLayer = true
         background.layer?.cornerRadius = CGFloat(QuickChatPageStyle.windowCornerRadius)
         background.layer?.masksToBounds = true
         let webView = makeWebView()
-        let dragRegion = DraggableView()
-        dragRegion.isHidden = true
-        webView.configuration.userContentController.add(HeaderControlsHandler(dragRegion), name: "quickChatHeaderControls")
-        for view in [webView, dragRegion] {
+        webView.configuration.userContentController.add(PageMessageHandler(self), name: "quickChat")
+        let headerButtons = HeaderButtons()
+        headerButtons.onOpenInBrowser = { [weak self] in self?.openInBrowser() }
+        headerButtons.onTemporaryChat = { [weak self] in self?.toggleTemporaryChat() }
+        headerButtons.onNewChat = { [weak self] in self?.newConversation() }
+        for view in [webView, headerButtons] {
             view.translatesAutoresizingMaskIntoConstraints = false
             background.addSubview(view)
         }
+        // The buttons line up with the page's sidebar button: 8 pt from the edges, 36 pt tall.
         NSLayoutConstraint.activate([
             webView.leadingAnchor.constraint(equalTo: background.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: background.trailingAnchor),
             webView.topAnchor.constraint(equalTo: background.topAnchor),
             webView.bottomAnchor.constraint(equalTo: background.bottomAnchor),
-            dragRegion.leadingAnchor.constraint(equalTo: background.leadingAnchor),
-            dragRegion.trailingAnchor.constraint(equalTo: background.trailingAnchor),
-            dragRegion.topAnchor.constraint(equalTo: background.topAnchor),
-            dragRegion.heightAnchor.constraint(equalToConstant: 44),
+            headerButtons.trailingAnchor.constraint(equalTo: background.trailingAnchor, constant: -8),
+            headerButtons.topAnchor.constraint(equalTo: background.topAnchor, constant: 8),
         ])
         panel.contentView = background
 
@@ -131,9 +143,29 @@ final class QuickChatController: NSObject {
 
         self.panel = panel
         self.webView = webView
-        self.dragRegion = dragRegion
+        self.headerButtons = headerButtons
+        systemAppearanceObservation = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.updateAppearance() }
+        }
+        // The page changes its address without loading (single-page app); this follows each change.
+        urlObservation = webView.observe(\.url, options: [.initial, .new]) { [weak self] webView, _ in
+            MainActor.assumeIsolated { self?.headerButtons?.update(for: webView.url) }
+        }
         webView.load(URLRequest(url: Self.chatURL))
         return panel
+    }
+
+    /// A stretchable rounded rectangle; only its corners keep their size when resized.
+    private static func roundedMask(radius: CGFloat) -> NSImage {
+        let side = radius * 2 + 1
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        image.resizingMode = .stretch
+        return image
     }
 
     private func restorePosition(of panel: NSPanel) {
@@ -186,16 +218,17 @@ final class QuickChatController: NSObject {
         return webView
     }
 
+    /// Starts a new chat the way the page does, without reloading: the title bar's new chat
+    /// button (next to the sidebar button), else the page's Home link, else ChatGPT's own
+    /// shortcut (⇧⌘O). Only structure is used, so it works in every language.
     private func newConversation() {
-        guard let webView, let url = webView.url, url.scheme == "https",
-              let host = url.host, Self.isChatGPTHost(host) else { return }
+        guard let webView, QuickChatLocation(webView.url).isChatGPT else { return }
         webView.evaluateJavaScript("""
             (() => {
-                const button = document.querySelector('[data-testid="create-new-chat-button"], [data-testid="new-chat-button"], [aria-label^="New chat" i]')
-                    || [...document.querySelectorAll('button, a, [role="button"]')].find(element =>
-                        /^new chat(?:$|\\s)/i.test((element.getAttribute('aria-label') || element.textContent || '').trim()));
+                const page = document.querySelector('[data-app-shell-active-page="true"]') || document;
+                const button = page.querySelector('[data-app-shell-header-slot="start"] > :not([aria-hidden="true"]) button:not([aria-controls])')
+                    || page.querySelector('a[href="/"]') || document.querySelector('a[href="/"]');
                 if (button) { button.click(); return true; }
-                // The compact page may unmount the sidebar button; use the site's own shortcut then.
                 const event = new KeyboardEvent('keydown', {
                     key: 'O', code: 'KeyO', keyCode: 79, which: 79,
                     metaKey: true, shiftKey: true, bubbles: true, cancelable: true
@@ -203,22 +236,92 @@ final class QuickChatController: NSObject {
                 return !(document.activeElement || document.body).dispatchEvent(event);
             })();
             """) { [weak self] result, error in
+                guard let self else { return }
                 if error != nil || result as? Bool != true {
-                    self?.log.error("Could not invoke ChatGPT's New chat action")
-                    NSSound.beep()
+                    self.log.error("Could not invoke ChatGPT's New chat action; loading a new chat")
+                    self.webView?.load(URLRequest(url: Self.chatURL))
                 } else {
-                    self?.focusComposer()
+                    self.focusComposer()
                 }
             }
     }
 
+    /// Opens the current page (a conversation, or a new chat) in the default browser and hides the panel.
+    private func openInBrowser() {
+        let url = webView?.url
+        NSWorkspace.shared.open(QuickChatLocation(url).isChatGPT ? url ?? Self.chatURL : Self.chatURL)
+        hide(restoreFocus: false)
+    }
+
+    /// Starts or leaves a temporary chat with the page's own button, so the page stays loaded.
+    /// Without that button (other languages, a changed page), loads the matching address.
+    private func toggleTemporaryChat() {
+        guard let webView else { return }
+        let leave = QuickChatLocation(webView.url).isTemporary
+        webView.evaluateJavaScript("""
+            (() => {
+                const button = document.querySelector('header button[aria-label="Temporary chat" i], button[data-testid="temporary-chat-button"]');
+                if (!button) return false;
+                button.click();
+                return true;
+            })();
+            """) { [weak self] result, _ in
+                guard let self, let webView = self.webView else { return }
+                if result as? Bool != true {
+                    let address = leave ? "https://chatgpt.com/" : "https://chatgpt.com/?temporary-chat=true"
+                    webView.load(URLRequest(url: URL(string: address)!))
+                }
+                self.focusComposer()
+            }
+    }
+
+    fileprivate func handle(_ message: [String: Any]) {
+        switch message["type"] as? String {
+        case "drag":
+            dragPanel()
+        case "zoom":
+            panel?.toggleMaximize()
+        case "state":
+            headerButtons?.isAllowed = message["buttons"] as? Bool ?? false
+            pageIsDark = message["dark"] as? Bool
+            updateAppearance()
+        default:
+            break
+        }
+    }
+
+    /// The panel's material and buttons match the page's theme. When the page follows the system
+    /// theme, so does the panel; this also keeps the page's "system" setting working, as the page
+    /// takes its system theme from the panel.
+    private func updateAppearance() {
+        guard let panel, let pageIsDark else { return }
+        let systemIsDark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        panel.appearance = pageIsDark == systemIsDark ? nil : NSAppearance(named: pageIsDark ? .darkAqua : .aqua)
+    }
+
+    /// Moves the panel with the mouse while the button that the page reported stays down.
+    private func dragPanel() {
+        guard let panel, let webView, NSEvent.pressedMouseButtons & 1 == 1,
+              let down = NSEvent.mouseEvent(with: .leftMouseDown, location: panel.mouseLocationOutsideOfEventStream,
+                                            modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                            windowNumber: panel.windowNumber, context: nil, eventNumber: 0,
+                                            clickCount: 1, pressure: 1) else { return }
+        panel.performDrag(with: down)
+        // The page saw the press but the drag used the release; end the press in the page too.
+        if let up = NSEvent.mouseEvent(with: .leftMouseUp, location: panel.mouseLocationOutsideOfEventStream,
+                                       modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                       windowNumber: panel.windowNumber, context: nil, eventNumber: 0,
+                                       clickCount: 1, pressure: 0) {
+            webView.mouseUp(with: up)
+        }
+    }
+
     private func focusComposer() {
-        // Current and legacy ChatGPT layouts use different editor markup.
-        webView?.evaluateJavaScript("document.querySelector('\(QuickChatPageStyle.composerSelector)')?.focus()")
+        webView?.evaluateJavaScript(QuickChatPageStyle.focusComposerScript)
     }
 
     /// chatgpt.com or a subdomain of it (not e.g. "notchatgpt.com").
-    fileprivate static func isChatGPTHost(_ host: String) -> Bool {
+    nonisolated static func isChatGPTHost(_ host: String) -> Bool {
         let host = host.lowercased()
         return host == "chatgpt.com" || host.hasSuffix(".chatgpt.com")
     }
@@ -304,10 +407,6 @@ extension QuickChatController: WKUIDelegate, WKNavigationDelegate, WKDownloadDel
 
     func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
         download.delegate = self
-    }
-
-    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        dragRegion?.isHidden = true
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -524,42 +623,161 @@ final class QuickChatPanel: NSPanel {
     }
 }
 
-/// Drag the empty middle of the web header without covering its buttons or adding a bar.
-private final class DraggableView: NSView {
-    var controls: [NSRect] = []
+/// Where the page is: an empty chat or a conversation, temporary or not.
+struct QuickChatLocation {
+    let isChatGPT: Bool
+    let isConversation: Bool
+    let isTemporary: Bool
 
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        let local = convert(point, from: superview)
-        let webPoint = NSPoint(x: local.x + frame.minX, y: bounds.height - local.y)
-        if controls.contains(where: { $0.contains(webPoint) }) { return nil }
-        return super.hitTest(point)
+    init(_ url: URL?) {
+        let host = url?.host ?? ""
+        isChatGPT = url?.scheme == "https" && QuickChatController.isChatGPTHost(host)
+        let parts = url?.pathComponents ?? []
+        // /c/<id>, also inside a project: /g/<project>/c/<id>
+        isConversation = isChatGPT && parts.firstIndex(of: "c").map { $0 + 1 < parts.count } == true
+        let query = url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems } ?? []
+        isTemporary = isChatGPT && query.contains { $0.name == "temporary-chat" && $0.value == "true" }
+    }
+}
+
+/// The panel's title bar buttons at the top right:
+/// - Empty chat: Open in Browser, Temporary Chat.
+/// - Conversation: Open in Browser, New Chat.
+/// - Temporary chats have no Open in Browser, as the browser cannot show them.
+final class HeaderButtons: NSStackView {
+    var onOpenInBrowser: (() -> Void)?
+    var onTemporaryChat: (() -> Void)?
+    var onNewChat: (() -> Void)?
+    /// The page has room for the buttons: it is the signed-in page, and nothing (the sidebar, a
+    /// menu, a dialog) covers this corner.
+    var isAllowed = false { didSet { updateVisibility() } }
+
+    private(set) var openInBrowser: HeaderButton!
+    private(set) var temporaryChat: HeaderButton!
+    private(set) var newChat: HeaderButton!
+    private var location = QuickChatLocation(nil)
+
+    init() {
+        super.init(frame: .zero)
+        orientation = .horizontal
+        spacing = 8
+        openInBrowser = HeaderButton(image: Self.symbol("arrow.up.right.square"), label: "Open in Browser") { [weak self] in self?.onOpenInBrowser?() }
+        temporaryChat = HeaderButton(image: Self.temporaryChatImage, label: "Temporary Chat") { [weak self] in self?.onTemporaryChat?() }
+        newChat = HeaderButton(image: Self.symbol("square.and.pencil"), label: "New Chat (⌘N)") { [weak self] in self?.onNewChat?() }
+        for button in [openInBrowser!, temporaryChat!, newChat!] { addArrangedSubview(button) }
+        update(for: nil)
     }
 
-    override func mouseDown(with event: NSEvent) {
-        if event.clickCount == 2 {
-            (window as? QuickChatPanel)?.toggleMaximize()
-        } else {
-            window?.performDrag(with: event)
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    func update(for url: URL?) {
+        location = QuickChatLocation(url)
+        openInBrowser.isHidden = location.isTemporary
+        temporaryChat.isHidden = location.isConversation
+        temporaryChat.isActive = location.isTemporary
+        newChat.isHidden = !location.isConversation
+        updateVisibility()
+    }
+
+    private func updateVisibility() {
+        isHidden = !location.isChatGPT || !isAllowed
+    }
+
+    private static func symbol(_ name: String) -> NSImage {
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)!
+        return image.withSymbolConfiguration(.init(pointSize: 15, weight: .regular)) ?? image
+    }
+
+    /// A speech bubble with a dashed outline, like ChatGPT's temporary chat icon.
+    private static let temporaryChatImage: NSImage = {
+        let image = NSImage(size: NSSize(width: 20, height: 20), flipped: true) { _ in
+            NSColor.black.setStroke()
+            let bubble = NSBezierPath()
+            bubble.appendArc(withCenter: NSPoint(x: 10.5, y: 9.5), radius: 7, startAngle: 140, endAngle: 470)
+            bubble.lineWidth = 1.6
+            bubble.lineCapStyle = .round
+            bubble.setLineDash([3.1, 2.6], count: 2, phase: 0)
+            bubble.stroke()
+            let tail = NSBezierPath()
+            tail.move(to: NSPoint(x: 5.2, y: 14.1))
+            tail.line(to: NSPoint(x: 3.2, y: 17.2))
+            tail.line(to: NSPoint(x: 7.2, y: 16.2))
+            tail.lineWidth = 1.6
+            tail.lineCapStyle = .round
+            tail.lineJoinStyle = .round
+            tail.stroke()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }()
+}
+
+/// A borderless icon button like the page's title bar buttons: 36 pt, 8 pt corners, a light
+/// fill on hover and while active.
+final class HeaderButton: NSButton {
+    private let onPress: () -> Void
+    private var isHovered = false { didSet { updateFill() } }
+    var isActive = false { didSet { updateFill() } }
+
+    init(image: NSImage, label: String, onPress: @escaping () -> Void) {
+        self.onPress = onPress
+        super.init(frame: .zero)
+        self.image = image
+        imagePosition = .imageOnly
+        isBordered = false
+        contentTintColor = .secondaryLabelColor
+        toolTip = label
+        setAccessibilityLabel(label)
+        target = self
+        action = #selector(press)
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([widthAnchor.constraint(equalToConstant: 36), heightAnchor.constraint(equalToConstant: 36)])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    @objc private func press() { onPress() }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) { isHovered = true }
+    override func mouseExited(with event: NSEvent) { isHovered = false }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateFill()
+    }
+
+    private func updateFill() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            let alpha: CGFloat = isActive ? 0.14 : isHovered ? 0.08 : 0
+            layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(alpha).cgColor
+            contentTintColor = isActive ? .labelColor : .secondaryLabelColor
         }
     }
 }
 
-/// Only control rectangles cross this bridge; the handler does not retain the panel or controller.
+/// Page messages go to the controller; the handler does not retain it.
 @MainActor
-private final class HeaderControlsHandler: NSObject, WKScriptMessageHandler {
-    private weak var dragRegion: DraggableView?
+private final class PageMessageHandler: NSObject, WKScriptMessageHandler {
+    private weak var controller: QuickChatController?
 
-    init(_ dragRegion: DraggableView) { self.dragRegion = dragRegion }
+    init(_ controller: QuickChatController) { self.controller = controller }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         let origin = message.frameInfo.securityOrigin
         guard message.frameInfo.isMainFrame, origin.protocol == "https",
               QuickChatController.isChatGPTHost(origin.host),
-              let rectangles = message.body as? [[Double]], let dragRegion else { return }
-        dragRegion.controls = rectangles.prefix(256).compactMap { rect in
-            guard rect.count == 4, rect.allSatisfy({ $0.isFinite }), rect[2] > 0, rect[3] > 0 else { return nil }
-            return NSRect(x: CGFloat(rect[0]), y: CGFloat(rect[1]), width: CGFloat(rect[2]), height: CGFloat(rect[3]))
-        }
-        dragRegion.isHidden = false
+              let body = message.body as? [String: Any] else { return }
+        controller?.handle(body)
     }
 }

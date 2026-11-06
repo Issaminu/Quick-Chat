@@ -1,6 +1,10 @@
 // Run from the repository root:
 // swiftc -swift-version 6 Sources/QuickChat/Features/QuickChat/QuickChatPageStyle.swift scripts/check-page-style.swift -o /tmp/quickchat-page-style-check
 // /tmp/quickchat-page-style-check
+//
+// Checks the page style against a small page that has the same hooks as chatgpt.com: the
+// empty chat first, then the conversation layout that the page switches to (without loading)
+// after the first message. scripts/check-live.py checks the real page.
 import AppKit
 import WebKit
 
@@ -16,6 +20,122 @@ enum PageStyleCheck {
         NSApplication.shared.run()
     }
 
+    static let fixture = """
+        <!doctype html><html data-theme="dark" style="color-scheme:dark"><head><style>
+        :root { --color-surface:#0e0e0e; --thread-composer-bottom-inset:24px; }
+        * { box-sizing:border-box; } html, body { margin:0; height:100%; background:#0e0e0e; color:#fff; }
+        .bg-surface { background-color:var(--color-surface); }
+        main { position:relative; height:100vh; display:flex; flex-direction:column; background:#0e0e0e; }
+        header { position:fixed; inset:0 0 auto 0; height:52px; display:flex; z-index:30; pointer-events:none; }
+        header button { width:36px; height:36px; pointer-events:auto; }
+        [data-app-shell-header-slot-content] { display:flex; gap:8px; padding:8px; }
+        [data-app-shell-main-titlebar] { flex:1; display:flex; justify-content:flex-end; padding:8px; }
+        .root { --composer-layout-surface-background:#212121; --composer-layout-surface-shadow:inset 0 0 1px #fff3;
+                --composer-border-radius:28px; --color-background-composer-primary:#2c67c5; --color-text-composer-primary:#fff; }
+        [data-composer-body] { position:relative; height:88px; background-color:var(--composer-layout-surface-background);
+                               box-shadow:var(--composer-layout-surface-shadow); border-radius:var(--composer-border-radius); }
+        .send { position:absolute; right:8px; bottom:8px; width:36px; height:36px; border-radius:50%;
+                background-color:var(--color-background-composer-primary); color:var(--color-text-composer-primary); }
+        [role="main"] { flex:1; display:flex; flex-direction:column; padding:76px 16px 24px; }
+        #page { flex:1; min-height:0; display:flex; flex-direction:column; }
+        #hero { flex:1; } .contents { display:contents; }
+        #thread { position:relative; flex:1; min-height:0; }
+        [data-app-action-timeline-scroll] { height:100%; overflow-y:auto; padding-top:32px; display:flex; flex-direction:column; }
+        .content { min-height:100%; flex-shrink:0; display:flex; flex-direction:column; }
+        .content p { height:40px; margin:0; }
+        .spacer { position:sticky; bottom:0; flex-shrink:0; height:calc(var(--thread-scroll-padding-bottom) - 1rem); }
+        .footer { position:absolute; inset:auto 0 0 0; }
+        [data-thread-scroll-footer]::after { content:""; display:block; height:var(--thread-composer-bottom-inset); }
+        [data-thread-scroll-footer] > [aria-hidden] { position:absolute; inset:0; }
+        [data-pip-obstacle] { position:relative; padding:0 16px; }
+        #scroll-down { position:absolute; left:50%; bottom:100%; width:32px; height:32px; }
+        .disclaimer { visibility:var(--thread-composer-disclaimer-visibility, inherit); }
+        [role="menu"] { position:fixed; top:200px; left:100px; width:100px; height:40px; }
+        </style></head><body><div data-app-shell-active-page="true"><main data-app-shell-main-surface>
+        <header data-app-shell-titlebar>
+          <div data-app-shell-header-slot="start"><div data-app-shell-header-slot-content>
+            <div class="bg-surface"><button id="sidebar-button" aria-controls="sidebar">S</button></div>
+            <div class="bg-surface"><button id="header-new-chat">N</button></div>
+          </div></div>
+          <div data-app-shell-main-titlebar><span id="title">Title</span><button id="temporary">T</button></div>
+        </header>
+        <div id="page"></div>
+        </main></div><div role="menu" class="bg-surface">Menu</div>
+        <template id="home"><div role="main">
+          <div id="hero"><h1 id="greeting">Any greeting</h1><p>Any description</p></div>
+          <div id="composer-block"><div data-home-feed-composer class="contents">
+            <form data-chatgpt-composer data-composer-placement="home"><div class="root"><div data-composer-body>
+              <div contenteditable="true"></div><button class="send">↑</button></div></div></form>
+          </div><div id="notice">Any notice</div></div>
+        </div></template>
+        <template id="conversation"><div id="thread">
+          <div data-app-action-timeline-scroll>
+            <div class="content"><div id="messages"></div>
+              <div><div class="disclaimer" id="disclaimer" data-markdown-copy="exclude">Any disclaimer</div></div><div class="spacer" aria-hidden="true"></div></div>
+            <div class="footer"><div data-thread-scroll-footer>
+              <div aria-hidden="true" class="bg-surface"></div>
+              <div data-pip-obstacle><button id="scroll-down" class="bg-surface">↓</button>
+                <form data-chatgpt-composer data-composer-placement="thread"><div class="root"><div data-composer-body>
+                  <div contenteditable="true"></div><button class="send">↑</button></div></div></form></div>
+            </div></div>
+          </div>
+        </div></template>
+        <script>
+        // Like ChatGPT: render a page from a template and track the composer area's height.
+        window.show = name => {
+            document.querySelector('#page').replaceChildren(document.querySelector('#' + name).content.cloneNode(true));
+            const scroller = document.querySelector('[data-app-action-timeline-scroll]');
+            if (!scroller) return;
+            document.querySelector('#messages').innerHTML = '<p>Message</p>'.repeat(40);
+            const footer = document.querySelector('[data-thread-scroll-footer]');
+            new ResizeObserver(() => scroller.style.setProperty('--thread-scroll-padding-bottom', footer.offsetHeight + 16 + 'px')).observe(footer);
+        };
+        show('home');
+        </script></body></html>
+        """
+
+    static let checks = """
+        (() => {
+            const $ = selector => document.querySelector(selector);
+            const style = selector => getComputedStyle($(selector));
+            const alpha = color => {
+                const context = document.createElement('canvas').getContext('2d');
+                context.fillStyle = color;
+                context.fillRect(0, 0, 1, 1);
+                return context.getImageData(0, 0, 1, 1).data[3];
+            };
+            const shown = element => element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
+            const composer = [...document.querySelectorAll('[data-composer-body]')].find(shown);
+            const rect = composer.getBoundingClientRect();
+            const send = composer.querySelector('.send');
+            const result = {
+                'page surfaces are transparent': ['html', 'body', 'main'].every(s => alpha(style(s).backgroundColor) === 0),
+                'sidebar button stays at the top left': shown($('#sidebar-button')) && $('#sidebar-button').getBoundingClientRect().x === 8,
+                'header has no other page buttons': !shown($('#header-new-chat')) && !shown($('#temporary')) && !shown($('#title')),
+                'header buttons have no fill': alpha(getComputedStyle($('#sidebar-button').parentElement).backgroundColor) === 0,
+                'composer is translucent': alpha(getComputedStyle(composer).backgroundColor) > 0 && alpha(getComputedStyle(composer).backgroundColor) < 40,
+                'composer has one 1-point border': getComputedStyle(composer).boxShadow.includes('inset') && getComputedStyle(composer).borderTopWidth === '0px',
+                'composer corners are concentric with the window': getComputedStyle(composer).borderTopLeftRadius === '12px',
+                'composer insets are 8 points': rect.left === 8 && innerWidth - rect.right === 8 && innerHeight - rect.bottom === 8,
+                'primary button is white with a black icon': getComputedStyle(send).backgroundColor === 'rgb(255, 255, 255)' && getComputedStyle(send).color === 'rgb(0, 0, 0)',
+                'menus keep their fill': alpha(style('[role="menu"]').backgroundColor) === 255
+            };
+            if ($('#hero')) {
+                result['greeting and notices are hidden'] = !shown($('#hero')) && !shown($('#greeting')) && !shown($('#notice'));
+            } else {
+                const scroller = $('[data-app-action-timeline-scroll]');
+                const content = scroller.firstElementChild;
+                result['messages end at the composer top'] = Math.abs(scroller.getBoundingClientRect().bottom - rect.top) < 1;
+                result['messages fade with the scroll position'] = getComputedStyle(content).maskImage.includes('gradient') &&
+                    getComputedStyle(content).animationName === 'quick-chat-follow-scroll';
+                result['scroll-to-bottom button keeps its fill'] = alpha(style('#scroll-down').backgroundColor) === 255;
+                result['disclaimer is hidden and takes no space'] = $('#disclaimer').getClientRects().length === 0;
+                result['opaque composer backdrop is hidden'] = !shown($('[data-thread-scroll-footer] > [aria-hidden]'));
+            }
+            return result;
+        })();
+        """
+
     static func check() async throws {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
@@ -25,91 +145,23 @@ enum PageStyleCheck {
         let window = NSWindow(contentRect: web.frame, styleMask: .borderless, backing: .buffered, defer: false)
         window.contentView = web
         window.orderFront(nil)
-        let fixture = """
-        <!doctype html><html style="color-scheme:dark"><head><style>
-        :root { --bg-primary:#000; --main-surface-primary:#000; --app-color-background-surface-under:#000; }
-        * { box-sizing:border-box; } body { margin:0; } #root, main { height:100vh; }
-        header { position:absolute; top:0; left:0; width:100%; height:52px; display:flex; }
-        .toolbar-branch { display:flex; margin-left:auto; transform:translateZ(0); contain:layout paint; }
-        header button { width:36px; height:36px; }
-        #welcome-region { height:340px; }
-        .surface { background:var(--bg-primary); }
-        #fixture-dock { position:absolute; bottom:0; width:100%; padding:6px 0 24px; }
-        .composer-offset { padding-inline:16px; padding-bottom:0; }
-        .contents { display:contents; }
-        form { margin:0; background:var(--bg-primary); }
-        #composer-surface { position:relative; height:88px; border-radius:28px; background:#212121; }
-        #composer-inner { height:100%; background:#212121; }
-        .bg-composer-primary { background:#2c67c5; color:white; position:absolute; right:8px; bottom:8px; width:36px; height:36px; border-radius:50%; }
-        .bg-composer-primary svg { color:white; }
-        </style></head><body><div id="root"><main class="group/home-composer-layout">
-        <header data-app-shell-titlebar><button aria-label="Show sidebar">Sidebar</button>
-        <button aria-label="New chat">New chat</button><span id="conversation-title">Test response</span>
-        <div class="toolbar-branch"><button id="share-chat">Share</button><div class="contents"><button aria-label="Temporary chat"><svg width="20" height="20"></svg></button></div></div></header>
-        <section id="welcome-region"><h1 id="welcome-heading">Arbitrary greeting variant</h1><div class="heading-xl">Another animated greeting layer</div></section>
-        <article id="message-warning"><h1 id="message-heading">A message heading</h1>ChatGPT can make mistakes.</article>
-        <div id="fixture-dock"><div id="composer-shell" class="composer-offset"><div id="disclaimer" class="surface">ChatGPT can make mistakes.</div>
-        <div class="contents"><div class="contents"><form data-composer-placement="home"><div id="composer-surface" data-composer-body><div id="composer-inner"><div role="textbox" data-composer-markdown contenteditable="true"></div></div>
-        <button aria-label="Send" class="bg-composer-primary"><svg><path fill="currentColor" d="M1 1h10v10z"></path></svg></button></div></form></div></div>
-        </div></div></main>
-        <aside role="dialog"><div id="sidebar-row" class="surface">Recent chat</div></aside>
-        <div role="menu"><div id="menu-row" class="surface">Settings</div></div>
-        </div></body></html>
-        """
         web.loadHTMLString(fixture, baseURL: URL(string: "https://chatgpt.com/"))
         var ready = false
-        for _ in 0..<100 {
-            if (try? await web.evaluateJavaScript("!!document.getElementById('quick-chat-page-style')")) as? Bool == true {
-                ready = true
-                break
-            }
+        for _ in 0..<200 where !ready {
+            ready = (try? await web.evaluateJavaScript("!!document.getElementById('quick-chat-page-style')")) as? Bool == true
             try await Task.sleep(for: .milliseconds(25))
         }
         guard ready else { print("FAIL: fixture did not load"); exit(1) }
         var failures = 0
-        for state in ["empty chat", "client-side greeting and composer rerender"] {
-            let result = try await web.evaluateJavaScript("""
-                (() => {
-                    const alpha = selector => {
-                        const context = document.createElement('canvas').getContext('2d');
-                        context.fillStyle = getComputedStyle(document.querySelector(selector)).backgroundColor;
-                        context.fillRect(0,0,1,1);
-                        return context.getImageData(0,0,1,1).data[3];
-                    };
-                    const temporary = document.querySelector('button[aria-label="Temporary chat"]');
-                    const card = document.querySelector('#composer-surface');
-                    const rect = card.getBoundingClientRect();
-                    const send = document.querySelector('button[aria-label="Send"]');
-                    const shown = element => element.checkVisibility({visibilityProperty:true});
-                    return {
-                        'chat surface stays transparent': alpha('main') === 0,
-                        'disclaimer is hidden': !shown(document.querySelector('#disclaimer')),
-                        'composer remains visible': shown(card),
-                        'matching message text remains visible': shown(document.querySelector('#message-warning')),
-                        'only Temporary Chat remains in the header': [...document.querySelectorAll('header button')].filter(shown).length === 1 && shown(temporary),
-                        'Temporary Chat is at the top left': temporary.getBoundingClientRect().x === 8 && temporary.getBoundingClientRect().y === 8,
-                        'conversation title is hidden': !shown(document.querySelector('#conversation-title')),
-                        'composer has a light translucent fill': alpha('#composer-surface') > 0 && alpha('#composer-surface') < 30,
-                        'composer inner layer has no opaque fill': alpha('#composer-inner') === 0,
-                        'composer side and bottom insets are 8 points': rect.left === 8 && rect.right === innerWidth - 8 && rect.bottom === innerHeight - 8,
-                        'inner corners equal outer radius minus inset': parseFloat(getComputedStyle(card).borderRadius) === 20 - 8,
-                        'every greeting layer is hidden': [...document.querySelectorAll('#welcome-region, #welcome-region *')].every(e=>!shown(e)),
-                        'headings inside messages remain visible': shown(document.querySelector('#message-heading')),
-                        'primary action is white with a black icon': getComputedStyle(send).backgroundColor === 'rgb(255, 255, 255)' && getComputedStyle(send.querySelector('svg')).color === 'rgb(0, 0, 0)',
-                        'sidebar and its rows stay opaque': alpha('aside') === 255 && alpha('#sidebar-row') === 255,
-                        'menu and its rows stay opaque': alpha('[role="menu"]') === 255 && alpha('#menu-row') === 255
-                    };
-                })();
-                """) as! [String: Bool]
-            for name in result.keys.sorted() {
-                let passed = result[name]!
-                print("\(passed ? "PASS" : "FAIL") \(state): \(name)")
-                if !passed { failures += 1 }
+        for state in ["empty chat", "conversation (after the first message)"] {
+            if state != "empty chat" {
+                _ = try await web.evaluateJavaScript("show('conversation')")
+                try await Task.sleep(for: .milliseconds(200))
             }
-            _ = try await web.evaluateJavaScript("(() => { document.querySelector('#welcome-region').innerHTML='<div class=\"heading-xl\">A completely different greeting with no matched words</div>';const footer=document.querySelector('#composer-shell');const replacement=footer.cloneNode(true);replacement.querySelectorAll('[data-quick-chat-disclaimer]').forEach(e=>e.removeAttribute('data-quick-chat-disclaimer'));footer.replaceWith(replacement); })()")
-            for _ in 0..<100 {
-                if (try await web.evaluateJavaScript("getComputedStyle(document.querySelector('#disclaimer')).display === 'none'")) as? Bool == true { break }
-                try await Task.sleep(for: .milliseconds(20))
+            let result = try await web.evaluateJavaScript(checks) as! [String: Bool]
+            for name in result.keys.sorted() {
+                print("\(result[name]! ? "PASS" : "FAIL") \(state): \(name)")
+                if !result[name]! { failures += 1 }
             }
         }
         window.orderOut(nil)

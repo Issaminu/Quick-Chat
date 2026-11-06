@@ -1,250 +1,181 @@
-/// Visual changes are limited to ChatGPT; account-provider pages keep their own styling.
+import Foundation
+
+/// How chatgpt.com looks and behaves inside the panel. Account-provider pages keep their own styling.
+///
+/// The style keys only on ChatGPT's semantic attributes (`data-app-shell-*`, `data-composer-*`,
+/// `data-thread-*`) and design tokens (`--composer-*`), never on text or generated class names.
+/// CSS applies to every re-render without scripts that tag elements. If ChatGPT renames a hook,
+/// that part of the page falls back to ChatGPT's own look; it does not break the page.
 enum QuickChatPageStyle {
     static let windowCornerRadius = 20
     static let composerInset = 8
-    static let composerSelector = "#prompt-textarea, #mobile-composer-prompt, [data-composer-markdown][contenteditable], [role=\"textbox\"][contenteditable]"
-    static let script = """
+    /// Focuses the rendered message editor (the page keeps hidden copies of earlier pages).
+    static let focusComposerScript = """
+        [...document.querySelectorAll('form[data-chatgpt-composer] [contenteditable="true"], #prompt-textarea')]
+            .find(element => element.getClientRects().length > 0)?.focus()
+        """
+
+    static let css = #"""
+        :root {
+            --quick-chat-inset: \#(composerInset)px;
+            --quick-chat-composer-radius: \#(windowCornerRadius - composerInset)px;
+            --quick-chat-fade: 32px;
+        }
+
+        /* Transparent page surfaces show the panel's material. Only the surfaces change, not the
+           shared color tokens, so menus, the sidebar, and floating buttons keep their backgrounds. */
+        html, body, main[data-app-shell-main-surface] { background: transparent !important; }
+        :is([role="main"], [role="main"] *):has(form[data-chatgpt-composer]) { background-color: transparent !important; }
+        [data-thread-scroll-footer] > [aria-hidden="true"] { display: none !important; }
+
+        /* Chat pages' title bar: only the sidebar button. The panel adds its own buttons on the right.
+           The rest stays in the layout (hidden), because the page measures it to place the
+           conversation. Other pages (such as plugins or scheduled tasks) keep their title bar. */
+        [data-app-shell-active-page="true"]:has(form[data-chatgpt-composer]) {
+            & header[data-app-shell-titlebar] > :not([data-app-shell-header-slot="start"]) {
+                visibility: hidden !important;
+                pointer-events: none !important;
+            }
+            & [data-app-shell-header-slot="start"] [data-app-shell-header-slot-content] > :not(:has([aria-controls])) { display: none !important; }
+        }
+        header[data-app-shell-titlebar] .bg-surface { background-color: transparent !important; }
+
+        /* Empty chat: only the composer. This hides every greeting, suggestion, and notice around it.
+           Content before the composer keeps its space, so the composer stays at the bottom; content
+           after it takes no space, so nothing invisible sits below the composer. */
+        :is([role="main"], [role="main"] *):has([data-home-feed-composer]) > :not([data-home-feed-composer]):not(:has([data-home-feed-composer])) {
+            visibility: hidden !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+        :is([role="main"] *):has([data-home-feed-composer]) ~ *, [data-home-feed-composer] ~ * { display: none !important; }
+        /* Conversation: the disclaimer below the messages (between the messages and the page's
+           bottom spacer) takes no space. A block there with a control in it stays. */
+        [data-app-action-timeline-scroll] { --thread-composer-disclaimer-visibility: hidden !important; }
+        [data-app-action-timeline-scroll] > :first-child > :not(:first-child):not(:last-child):has([data-markdown-copy="exclude"]):not(:has(button, input, textarea, [role="button"])) {
+            display: none !important;
+        }
+
+        /* Composer: ChatGPT's own surface tokens. They are set on every layer, because the page sets
+           them on several layers. The radius is concentric with the window corners. */
+        form[data-chatgpt-composer], form[data-chatgpt-composer] * {
+            --composer-layout-surface-background: color-mix(in srgb, CanvasText 7%, transparent) !important;
+            --composer-layout-surface-shadow: inset 0 0 0 1px color-mix(in srgb, CanvasText 12%, transparent) !important;
+            --composer-layout-surface-backdrop-filter: none !important;
+            --composer-border-radius: var(--quick-chat-composer-radius) !important;
+            --radius-token-composer-single-line: var(--quick-chat-composer-radius) !important;
+            --color-background-composer-primary: #fff !important;
+            --color-text-composer-primary: #000 !important;
+        }
+        form[data-chatgpt-composer] [data-composer-body] { border-radius: var(--quick-chat-composer-radius) !important; }
+
+        /* The same small inset left, right, and below the composer, before and after the first message. */
+        :is([role="main"], [role="main"] *):has(form[data-composer-placement="home"]) {
+            padding-inline: 0 !important;
+            padding-bottom: 0 !important;
+        }
+        form[data-composer-placement="home"] { margin: 0 var(--quick-chat-inset) var(--quick-chat-inset) !important; }
+        [data-thread-scroll-footer] { --thread-composer-bottom-inset: var(--quick-chat-inset) !important; }
+        [data-thread-scroll-footer] > [data-pip-obstacle] { padding-inline: var(--quick-chat-inset) !important; }
+
+        /* Messages end at the composer's top edge, so no text shows beside, below, or through it.
+           ChatGPT keeps the composer area's height in --thread-scroll-padding-bottom (plus 1rem).
+           The composer floats outside the shortened scroll area, so it is not clipped. */
+        [data-app-action-timeline-scroll] {
+            --quick-chat-composer-area: calc(var(--thread-scroll-padding-bottom, 0px) - 1rem);
+            height: calc(100% - var(--quick-chat-composer-area)) !important;
+            flex: none !important;
+            container-type: size;
+            scroll-timeline: --quick-chat-thread block;
+        }
+        /* The page's spacer kept the last message clear of the composer; now it only clears the fade. */
+        [data-app-action-timeline-scroll] > :first-child > [aria-hidden="true"]:last-child { height: var(--quick-chat-fade) !important; }
+        /* Messages fade out under the title bar and above the composer. A mask on the scroll area
+           would also hide the composer, so the mask is on the content and a scroll timeline keeps
+           it aligned with the visible area. */
+        @keyframes quick-chat-follow-scroll {
+            from { mask-position: 0 calc(0px - var(--quick-chat-top)); }
+            to { mask-position: 0 100%; }
+        }
+        [data-app-action-timeline-scroll] > :first-child {
+            --quick-chat-top: var(--thread-content-top-inset, 0px);
+            mask-image: linear-gradient(to bottom,
+                transparent max(0px, calc(var(--quick-chat-top) - 60px)),
+                black max(8px, calc(var(--quick-chat-top) - 20px)),
+                black calc(100% - var(--quick-chat-fade)),
+                transparent);
+            mask-size: 100% calc(100cqh + var(--quick-chat-top));
+            mask-repeat: no-repeat;
+            animation: quick-chat-follow-scroll linear both;
+            animation-timeline: --quick-chat-thread;
+        }
+
+        /* No scroll bars or scroll bar gutters. */
+        *, *::before, *::after { scrollbar-width: none !important; scrollbar-gutter: auto !important; }
+        ::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+        """#
+
+    /// Adds the style and a small bridge to the panel: window dragging from the empty title bar
+    /// area, and the page state that the panel's own buttons need.
+    static let script = #"""
         (() => {
             const host = location.hostname.toLowerCase();
             if (host !== "chatgpt.com" && !host.endsWith(".chatgpt.com")) return;
             const style = document.createElement("style");
             style.id = "quick-chat-page-style";
-            style.textContent = `
-                :root {
-                    --quick-chat-window-radius: \(windowCornerRadius)px;
-                    --quick-chat-composer-inset: \(composerInset)px;
-                    --quick-chat-composer-radius: calc(var(--quick-chat-window-radius) - var(--quick-chat-composer-inset));
-                    --app-color-background-surface: transparent !important;
-                    --app-color-background-surface-under: transparent !important;
-                    --main-surface-primary: transparent !important;
-                    --main-surface-background: transparent !important;
-                    --bg-primary: transparent !important;
-                }
-                html, body, #root, main, #thread, #thread-bottom-container,
-                :where(div:has(form :is(\(composerSelector)))) {
-                    background: transparent !important;
-                }
-                aside, [role="dialog"], [role="menu"], [role="listbox"], #stage-slideover-sidebar {
-                    --app-color-background-surface: Canvas !important;
-                    --app-color-background-surface-under: Canvas !important;
-                    --main-surface-primary: Canvas !important;
-                    --main-surface-background: Canvas !important;
-                    --bg-primary: Canvas !important;
-                    background-color: Canvas !important;
-                }
-                [data-quick-chat-titlebar] {
-                    pointer-events: none !important;
-                    display: flex !important;
-                    padding: 8px !important;
-                    align-items: flex-start !important;
-                    justify-content: flex-start !important;
-                    box-sizing: border-box !important;
-                }
-                [data-quick-chat-titlebar] *:not([data-quick-chat-temporary-branch]):not([data-quick-chat-temporary-button] *) {
-                    display: none !important;
-                }
-                [data-quick-chat-temporary-branch]:not([data-quick-chat-temporary-button]) {
-                    display: contents !important;
-                    contain: none !important;
-                    transform: none !important;
-                }
-                [data-quick-chat-temporary-button] {
-                    pointer-events: auto !important;
-                    display: flex !important;
-                    visibility: visible !important;
-                    position: static !important;
-                    width: 28px !important;
-                    min-width: 28px !important;
-                    height: 28px !important;
-                    margin: 0 !important;
-                    padding: 4px !important;
-                    background: transparent !important;
-                }
-                [data-quick-chat-mode-switcher], [data-quick-chat-disclaimer] { display: none !important; }
-                [data-quick-chat-welcome], [data-quick-chat-welcome] * {
-                    visibility: hidden !important;
-                    pointer-events: none !important;
-                }
-                [data-quick-chat-composer-layer] { background: transparent !important; }
-                [data-composer-body], [data-quick-chat-composer-surface] {
-                    background: color-mix(in srgb, CanvasText 6%, transparent) !important;
-                    border: 1px solid color-mix(in srgb, CanvasText 12%, transparent) !important;
-                    border-radius: var(--quick-chat-composer-radius) !important;
-                    box-sizing: border-box !important;
-                    -webkit-backdrop-filter: blur(12px);
-                    backdrop-filter: blur(12px);
-                }
-                [data-quick-chat-composer-dock] {
-                    padding: 0 var(--quick-chat-composer-inset) var(--quick-chat-composer-inset) !important;
-                    margin: 0 !important;
-                    width: 100% !important;
-                    max-width: none !important;
-                    box-sizing: border-box !important;
-                }
-                [data-quick-chat-composer-wrapper] {
-                    padding-inline: 0 !important;
-                    padding-bottom: 0 !important;
-                    margin-inline: 0 !important;
-                    margin-bottom: 0 !important;
-                    max-width: none !important;
-                }
-                [data-quick-chat-composer-dock-self] {
-                    margin: 0 var(--quick-chat-composer-inset) var(--quick-chat-composer-inset) !important;
-                    width: calc(100% - var(--quick-chat-composer-inset) * 2) !important;
-                }
-                [data-composer-body] button.bg-composer-primary,
-                form button[data-testid="send-button"], form button[data-testid="voice-mode-button"] {
-                    background: #fff !important;
-                    color: #000 !important;
-                }
-                [data-composer-body] button.bg-composer-primary svg,
-                [data-composer-body] button.bg-composer-primary svg *,
-                form button[data-testid="send-button"] svg, form button[data-testid="voice-mode-button"] svg {
-                    color: #000 !important;
-                }
-                *, *::before, *::after {
-                    scrollbar-width: none !important;
-                    scrollbar-gutter: auto !important;
-                }
-                ::-webkit-scrollbar {
-                    display: none !important;
-                    width: 0 !important;
-                    height: 0 !important;
-                }
-                form:has(:is(\(composerSelector))) {
-                    --bg-primary: color-mix(in srgb, Canvas 35%, transparent) !important;
-                    --bg-secondary: color-mix(in srgb, Canvas 35%, transparent) !important;
-                    --main-surface-secondary: color-mix(in srgb, Canvas 35%, transparent) !important;
-                    --app-color-background-surface: color-mix(in srgb, Canvas 35%, transparent) !important;
-                }
-                form:has(#mobile-composer-prompt) {
-                    background: color-mix(in srgb, Canvas 35%, transparent) !important;
-                }
-            `;
-            document.documentElement.appendChild(style);
+            style.textContent = \#(javaScriptString(css));
+            document.documentElement.append(style);
 
-            const promptSelector = '\(composerSelector)';
-            const controls = 'button, a, input, select, textarea, [role="button"], [role="tab"], [role="switch"], [role="radio"], [contenteditable="true"]';
-            const label = element => (element.getAttribute('aria-label') || element.textContent || '').trim();
-            const hideModeSwitch = () => {
-                for (const control of document.querySelectorAll(controls)) {
-                    if (label(control) !== 'Chat') continue;
-                    let group = control.parentElement;
-                    for (let depth = 0; group && depth < 4; depth++, group = group.parentElement) {
-                        const options = [...group.querySelectorAll(controls)];
-                        if (options.length > 2) break;
-                        if (options.length === 2 && options.some(option => label(option) === 'Work')) {
-                            group.toggleAttribute('data-quick-chat-mode-switcher', true);
-                            break;
-                        }
-                    }
-                }
+            const post = message => window.webkit?.messageHandlers?.quickChat?.postMessage(message);
+            const controls = 'a, button, input, textarea, select, label, summary, [contenteditable="true"], [role="button"], [role="link"], [role="menuitem"], [role="option"], [role="tab"], [role="switch"], [role="slider"]';
+            const titleBarBottom = () => document.querySelector("header")?.getBoundingClientRect().bottom || 52;
+
+            // A press on empty title bar space (not a control, not an overlay such as the sidebar or
+            // a dialog) moves the window; a double press zooms it, like a native title bar.
+            document.addEventListener("mousedown", event => {
+                if (event.button !== 0 || event.clientY >= titleBarBottom()) return;
+                const target = event.target instanceof Element ? event.target : null;
+                if (!target || target.closest(controls) || !target.closest("main, header")) return;
+                event.preventDefault();
+                post({ type: event.detail === 2 ? "zoom" : "drag" });
+            }, true);
+
+            // The panel's buttons sit at the top right of a chat page's title bar (the signed-in
+            // pages with a composer). They hide while something covers that corner (the sidebar, a
+            // menu, a dialog) and on other pages, which have their own buttons there. They follow
+            // the page's light or dark theme.
+            const covered = (x, y) => {
+                const element = document.elementFromPoint(x, y);
+                return !!element && element !== document.documentElement && element !== document.body &&
+                    !element.closest("main, header[data-app-shell-titlebar]");
             };
-            const styleComposer = () => {
-                const prompt = document.querySelector(promptSelector);
-                const form = prompt?.closest('form');
-                if (!form) return;
-                let surface = prompt.closest('[data-composer-body]') || form;
-                for (let element = prompt.parentElement; element && form.contains(element); element = element.parentElement) {
-                    if (parseFloat(getComputedStyle(element).borderTopLeftRadius) >= 12) surface = element;
-                }
-                for (let element = prompt.parentElement; element && form.contains(element); element = element.parentElement) {
-                    element.toggleAttribute('data-quick-chat-composer-layer', element !== surface);
-                    element.toggleAttribute('data-quick-chat-composer-surface', element === surface);
-                }
-                let dock = form.closest('#thread-bottom-container');
-                if (!dock) {
-                    dock = form;
-                    for (let parent = form.parentElement; parent && !parent.matches('main, #thread, #root, body'); parent = parent.parentElement) {
-                        if (parent.getBoundingClientRect().height > form.getBoundingClientRect().height + 80 ||
-                            parent.querySelector('article, [data-message-author-role], h1, h2')) break;
-                        dock = parent;
-                    }
-                }
-                dock.toggleAttribute('data-quick-chat-composer-dock', dock !== form);
-                dock.toggleAttribute('data-quick-chat-composer-dock-self', dock === form);
-                for (let parent = form.parentElement; parent && parent !== dock && dock.contains(parent); parent = parent.parentElement) {
-                    parent.toggleAttribute('data-quick-chat-composer-wrapper', true);
-                }
-            };
-            const trimPageChrome = () => {
-                for (const titlebar of document.querySelectorAll('[data-app-shell-titlebar]')) {
-                    const hasSignIn = [...titlebar.querySelectorAll('button, a')]
-                        .some(element => /^(log in|sign up)$/i.test(label(element)));
-                    if (!hasSignIn) titlebar.toggleAttribute('data-quick-chat-titlebar', true);
-                }
-                const temporary = [...document.querySelectorAll('button[aria-label="Temporary chat"], button[data-testid="temporary-chat-button"]')]
-                    .find(element => !element.closest('[role="dialog"], [role="menu"]'));
-                const header = temporary?.closest('[data-app-shell-titlebar], header, #page-header');
-                if (header) {
-                    header.toggleAttribute('data-quick-chat-titlebar', true);
-                    for (let element = temporary; element && element !== header; element = element.parentElement) {
-                        element.toggleAttribute('data-quick-chat-temporary-branch', true);
-                    }
-                    temporary.toggleAttribute('data-quick-chat-temporary-button', true);
-                }
-                const prompt = document.querySelector(promptSelector);
-                const form = prompt?.closest('form');
-                const home = form?.matches('[data-composer-placement="home"]')
-                    ? form.closest('[class~="group/home-composer-layout"]') : null;
-                for (const heading of document.querySelectorAll('main h1, main h2, main .heading-xl, main [role="heading"], #thread h1, #thread h2')) {
-                    if (prompt && !heading.closest('article, [data-message-author-role], [data-message-id], .markdown, aside, [role="dialog"], [role="alert"]')) {
-                        let region = heading;
-                        while (home && region.parentElement && region.parentElement !== home &&
-                               !region.parentElement.contains(form) && !region.parentElement.querySelector('article, [data-message-author-role]')) {
-                            region = region.parentElement;
-                        }
-                        region.toggleAttribute('data-quick-chat-welcome', true);
-                    }
-                }
-                if (document.querySelector('[data-quick-chat-disclaimer]')) return;
-                for (const element of document.querySelectorAll('div, p, small, span')) {
-                    if (element.closest('article, [data-message-author-role], .markdown, form, aside, header, #page-header, [data-quick-chat-titlebar], [role="dialog"]') ||
-                        element.querySelector('form, textarea, [contenteditable]')) continue;
-                    const text = element.textContent.trim();
-                    if (text.length > 350 || !text.startsWith('ChatGPT can make mistakes.')) continue;
-                    let disclaimer = element;
-                    while (disclaimer.parentElement?.textContent.trim() === text &&
-                           !disclaimer.parentElement.querySelector('form, textarea, [contenteditable]')) {
-                        disclaimer = disclaimer.parentElement;
-                    }
-                    disclaimer.toggleAttribute('data-quick-chat-disclaimer', true);
-                    break;
-                }
-            };
+            let previous = "";
             let pending = false;
-            let previous = '';
-            const refresh = () => {
+            const report = () => {
                 pending = false;
-                hideModeSwitch();
-                styleComposer();
-                trimPageChrome();
-                const rectangles = [...document.querySelectorAll(controls)]
-                    .filter(element => getComputedStyle(element).visibility !== 'hidden')
-                    .map(element => element.getBoundingClientRect())
-                    .filter(rect => rect.top < 44 && rect.bottom > 0 && rect.width > 0 && rect.height > 0)
-                    .map(rect => [rect.left, rect.top, rect.width, rect.height]);
-                const current = JSON.stringify(rectangles);
-                if (current !== previous) {
-                    window.webkit?.messageHandlers?.quickChatHeaderControls?.postMessage(rectangles);
-                    previous = current;
-                }
+                const state = {
+                    type: "state",
+                    buttons: !!document.querySelector('[data-app-shell-active-page="true"] form[data-chatgpt-composer]') &&
+                        !!document.querySelector("header[data-app-shell-titlebar]") &&
+                        !covered(innerWidth - 26, 26) && !covered(innerWidth - 70, 26),
+                    dark: getComputedStyle(document.documentElement).colorScheme.includes("dark")
+                };
+                const current = JSON.stringify(state);
+                if (current !== previous) { previous = current; post(state); }
             };
-            const schedule = () => {
-                if (!pending) { pending = true; requestAnimationFrame(refresh); }
-            };
-            new MutationObserver(records => {
-                if (records.some(record => record.type === 'attributes' ||
-                    [...record.addedNodes, ...record.removedNodes].some(node => node.nodeType === Node.ELEMENT_NODE))) schedule();
-            }).observe(document.documentElement, {
+            const schedule = () => { if (!pending) { pending = true; requestAnimationFrame(report); } };
+            new MutationObserver(schedule).observe(document.documentElement, {
                 childList: true, subtree: true, attributes: true,
-                attributeFilter: ['class', 'style', 'aria-hidden', 'aria-expanded', 'data-state']
+                attributeFilter: ["class", "style", "hidden", "open", "aria-expanded", "aria-hidden", "data-state", "data-theme"]
             });
-            document.addEventListener('transitionend', schedule, true);
-            document.addEventListener('animationend', schedule, true);
-            window.addEventListener('resize', schedule);
-            window.addEventListener('scroll', schedule, true);
-            refresh();
+            for (const name of ["transitionend", "animationend", "resize"]) window.addEventListener(name, schedule, true);
+            report();
         })();
-        """
+        """#
+
+    /// `value` as a JavaScript string literal.
+    private static func javaScriptString(_ value: String) -> String {
+        let data = try! JSONSerialization.data(withJSONObject: [value])
+        return String(String(decoding: data, as: UTF8.self).dropFirst().dropLast())
+    }
 }

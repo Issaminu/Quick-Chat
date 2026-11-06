@@ -39,10 +39,16 @@ Quick Chat enables its global shortcut automatically when the app launches; the 
 
 - A global shortcut (⌥Space by default; change it with **Change Shortcut…**) toggles a floating panel with chatgpt.com inside.
 - The panel is 440×540 by default, so chatgpt.com uses its compact layout. It has a native translucent background with no separate title bar or visible scrollbars; scrolling still works. On the first launch it opens at the bottom-center of the display under the pointer. After that, the size and position are remembered.
-- The top-left contains only ChatGPT’s Temporary Chat button; the other header controls are hidden. The conversation title, empty-chat greeting and footer disclaimer are hidden. The composer is translucent, with 8-point side and bottom insets and a 12-point inner radius matching the 20-point window corners.
+- The title bar keeps ChatGPT’s sidebar button at the top left. The top right has two buttons:
+  - In an empty chat: **Open in Browser** (opens chatgpt.com in your default browser) and **Temporary Chat**.
+  - In a conversation: **Open in Browser** (opens that conversation) and **New Chat** (same as ⌘N).
+  - In a temporary chat, there is no Open in Browser, because the browser cannot show a temporary chat.
+- The empty chat shows only the composer: greetings, suggestions and notices are hidden. The Chat / Work switch, the conversation title and the disclaimer are hidden too.
+- The composer is translucent, with 8-point side and bottom insets and a 12-point corner radius that is concentric with the 20-point window corners. Messages end at the composer's top edge and fade out above it, so no text shows beside, below or through the composer.
 - Drag an empty area at the top of the chat to move the panel. Double-click that area, or press ⌘F, to maximize or restore its size. ⌘O resets it to the default size.
+- The panel follows ChatGPT's light or dark theme.
 - It stays on top of other windows, including full-screen apps, and doesn't hide when you click elsewhere. The shortcut, Esc or ⌘W hides it.
-- Reopening the panel returns to the conversation you left. Press ⌘N to trigger ChatGPT’s New chat action without reloading the page; the previous chat stays in your history. The Chat / Work switch is hidden to save space.
+- Reopening the panel returns to the conversation you left. Press ⌘N to trigger ChatGPT’s New chat action without reloading the page; the previous chat stays in your history.
 - Sign in once inside the panel. **Sign Out of Quick Chat** clears the panel's website data.
 - Voice works; macOS asks for microphone access the first time.
 - It doesn't need the ChatGPT desktop app. If the new app isn't installed, the Show Mini options are simply unavailable and the rest works the same.
@@ -151,6 +157,12 @@ swiftc -swift-version 6 Sources/QuickChat/Features/QuickChat/QuickChatPageStyle.
 ```
 
 The checks use local HTML fixtures and an isolated test app, without your signed-in session.
+
+The page style uses only ChatGPT's semantic attributes (`data-app-shell-*`, `data-composer-*`, `data-thread-*`) and design tokens, never text or generated class names. If ChatGPT changes its page, run the live check. It uses your Quick Chat session on the real chatgpt.com, sends no messages, and shows which part lost its hook. Quit Quick Chat first:
+
+```sh
+python3 scripts/check-live.py
+```
 
 Apps you build yourself aren't quarantined, so Gatekeeper doesn't block them.
 
