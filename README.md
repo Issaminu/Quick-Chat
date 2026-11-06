@@ -116,10 +116,10 @@ To start Quick Chat at login: **System Settings → General → Login Items → 
 | ⌥Space | Open or close the panel (change it with **Change Shortcut…** in the menu) |
 | Esc or ⌘W | Close the panel. While a menu, a dialog or the sidebar is open, Esc closes that first. |
 | ⌘N | New chat, without a page reload |
+| ⌘B | Show or hide the sidebar |
 | ⌘F | Expand to a large window, or shrink back |
 | ⌘O | Reset the panel to its default size (440 × 540) |
 | ⌘K | Search your chats (ChatGPT) |
-| ⇧⌘S | Show or hide the sidebar (ChatGPT) |
 | ⌘U | Attach files (ChatGPT) |
 | ⌘/ | Show all of ChatGPT's shortcuts |
 

@@ -130,6 +130,7 @@ final class QuickChatController: NSObject {
         let panel = QuickChatPanel(contentRect: NSRect(origin: .zero, size: QuickChatPanel.defaultSize))
         panel.onCancel = { [weak self] in self?.hide(restoreFocus: true) }
         panel.onNewConversation = { [weak self] in self?.newConversation() }
+        panel.onToggleSidebar = { [weak self] in self?.toggleSidebar() }
         panel.onMaximizedChange = { [weak self] maximized in self?.headerButtons?.isExpanded = maximized }
         panel.waitForContent = { [weak self] width in await self?.waitForPageLayout(width: width) }
         panel.resetSizeShortcut = resetSizeShortcut
@@ -598,6 +599,8 @@ final class QuickChatPanel: NSPanel {
     static let defaultSize = NSSize(width: 440, height: 540)
     var onCancel: (() -> Void)?
     var onNewConversation: (() -> Void)?
+    /// ⌘B: opens or closes the page's sidebar.
+    var onToggleSidebar: (() -> Void)?
     /// Called when the panel becomes large (maximized) or goes back to its own frame.
     var onMaximizedChange: ((Bool) -> Void)?
     /// Covers the content while the panel changes its size (the controller adds it).
@@ -758,10 +761,17 @@ final class QuickChatPanel: NSPanel {
     /// Runs the Reset Window Size or Maximize action if `event` is its shortcut. Key repeats
     /// are swallowed, so holding the shortcut doesn't toggle maximize over and over.
     private func handleLocalShortcut(_ event: NSEvent) -> Bool {
-        if event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command,
-           event.charactersIgnoringModifiers?.lowercased() == "n" {
-            if !event.isARepeat { onNewConversation?() }
-            return true
+        if event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command {
+            switch event.charactersIgnoringModifiers?.lowercased() {
+            case "n":
+                if !event.isARepeat { onNewConversation?() }
+                return true
+            case "b":
+                if !event.isARepeat { onToggleSidebar?() }
+                return true
+            default:
+                break
+            }
         }
         guard let pressed = Shortcut(event: event) else { return false }
         guard pressed == resetSizeShortcut || pressed == maximizeShortcut else { return false }

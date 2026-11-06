@@ -137,6 +137,9 @@ enum Check {
         buttons.sidebar.performClick(nil)
         await wait { (await js(web,"clicks.sidebar")) as? Int == 1 }
         check((await js(web,"clicks.sidebar")) as? Int == 1,"the panel's sidebar button uses the page's sidebar button")
+        panel.sendEvent(NSEvent.keyEvent(with:.keyDown,location:.zero,modifierFlags:.command,timestamp:0,windowNumber:panel.windowNumber,context:nil,characters:"b",charactersIgnoringModifiers:"b",isARepeat:false,keyCode:11)!)
+        await wait { (await js(web,"clicks.sidebar")) as? Int == 2 }
+        check((await js(web,"clicks.sidebar")) as? Int == 2,"Command-B opens or closes the sidebar")
         controller.setPointerInside(false)
         try? await Task.sleep(for:.milliseconds(250))
         controller.setPointerInside(true)
