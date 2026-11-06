@@ -1,5 +1,8 @@
 /// Visual changes are limited to ChatGPT; account-provider pages keep their own styling.
 enum QuickChatPageStyle {
+    static let windowCornerRadius = 20
+    static let composerInset = 8
+    static let composerSelector = "#prompt-textarea, #mobile-composer-prompt, [data-composer-markdown][contenteditable], [role=\"textbox\"][contenteditable]"
     static let script = """
         (() => {
             const host = location.hostname.toLowerCase();
@@ -8,6 +11,9 @@ enum QuickChatPageStyle {
             style.id = "quick-chat-page-style";
             style.textContent = `
                 :root {
+                    --quick-chat-window-radius: \(windowCornerRadius)px;
+                    --quick-chat-composer-inset: \(composerInset)px;
+                    --quick-chat-composer-radius: calc(var(--quick-chat-window-radius) - var(--quick-chat-composer-inset));
                     --app-color-background-surface: transparent !important;
                     --app-color-background-surface-under: transparent !important;
                     --main-surface-primary: transparent !important;
@@ -15,7 +21,7 @@ enum QuickChatPageStyle {
                     --bg-primary: transparent !important;
                 }
                 html, body, #root, main, #thread, #thread-bottom-container,
-                :where(div:has(form #prompt-textarea), div:has(form #mobile-composer-prompt)) {
+                :where(div:has(form :is(\(composerSelector)))) {
                     background: transparent !important;
                 }
                 aside, [role="dialog"], [role="menu"], [role="listbox"], #stage-slideover-sidebar {
@@ -26,23 +32,50 @@ enum QuickChatPageStyle {
                     --bg-primary: Canvas !important;
                     background-color: Canvas !important;
                 }
-                [data-quick-chat-header], [data-quick-chat-sidebar], [data-quick-chat-new-chat] {
-                    visibility: hidden !important;
+                [data-quick-chat-titlebar] {
+                    pointer-events: none !important;
+                    display: flex !important;
+                    padding: 8px !important;
+                    align-items: flex-start !important;
+                    justify-content: flex-start !important;
+                    box-sizing: border-box !important;
                 }
-                [data-quick-chat-mode-switcher], [data-quick-chat-disclaimer], [data-quick-chat-welcome] {
+                [data-quick-chat-titlebar] *:not([data-quick-chat-temporary-branch]):not([data-quick-chat-temporary-button] *) {
                     display: none !important;
                 }
+                [data-quick-chat-temporary-branch]:not([data-quick-chat-temporary-button]) {
+                    display: contents !important;
+                    contain: none !important;
+                    transform: none !important;
+                }
+                [data-quick-chat-temporary-button] {
+                    pointer-events: auto !important;
+                    display: flex !important;
+                    visibility: visible !important;
+                    position: static !important;
+                    width: 28px !important;
+                    min-width: 28px !important;
+                    height: 28px !important;
+                    margin: 0 !important;
+                    padding: 4px !important;
+                    background: transparent !important;
+                }
+                [data-quick-chat-mode-switcher], [data-quick-chat-disclaimer] { display: none !important; }
+                [data-quick-chat-welcome], [data-quick-chat-welcome] * {
+                    visibility: hidden !important;
+                    pointer-events: none !important;
+                }
                 [data-quick-chat-composer-layer] { background: transparent !important; }
-                [data-quick-chat-composer-surface] {
+                [data-composer-body], [data-quick-chat-composer-surface] {
                     background: color-mix(in srgb, CanvasText 6%, transparent) !important;
                     border: 1px solid color-mix(in srgb, CanvasText 12%, transparent) !important;
-                    border-radius: 16px !important;
+                    border-radius: var(--quick-chat-composer-radius) !important;
                     box-sizing: border-box !important;
                     -webkit-backdrop-filter: blur(12px);
                     backdrop-filter: blur(12px);
                 }
                 [data-quick-chat-composer-dock] {
-                    padding: 0 12px 12px !important;
+                    padding: 0 var(--quick-chat-composer-inset) var(--quick-chat-composer-inset) !important;
                     margin: 0 !important;
                     width: 100% !important;
                     max-width: none !important;
@@ -56,8 +89,18 @@ enum QuickChatPageStyle {
                     max-width: none !important;
                 }
                 [data-quick-chat-composer-dock-self] {
-                    margin: 0 12px 12px !important;
-                    width: calc(100% - 24px) !important;
+                    margin: 0 var(--quick-chat-composer-inset) var(--quick-chat-composer-inset) !important;
+                    width: calc(100% - var(--quick-chat-composer-inset) * 2) !important;
+                }
+                [data-composer-body] button.bg-composer-primary,
+                form button[data-testid="send-button"], form button[data-testid="voice-mode-button"] {
+                    background: #fff !important;
+                    color: #000 !important;
+                }
+                [data-composer-body] button.bg-composer-primary svg,
+                [data-composer-body] button.bg-composer-primary svg *,
+                form button[data-testid="send-button"] svg, form button[data-testid="voice-mode-button"] svg {
+                    color: #000 !important;
                 }
                 *, *::before, *::after {
                     scrollbar-width: none !important;
@@ -68,7 +111,7 @@ enum QuickChatPageStyle {
                     width: 0 !important;
                     height: 0 !important;
                 }
-                form:has(#prompt-textarea), form:has(#mobile-composer-prompt) {
+                form:has(:is(\(composerSelector))) {
                     --bg-primary: color-mix(in srgb, Canvas 35%, transparent) !important;
                     --bg-secondary: color-mix(in srgb, Canvas 35%, transparent) !important;
                     --main-surface-secondary: color-mix(in srgb, Canvas 35%, transparent) !important;
@@ -80,6 +123,7 @@ enum QuickChatPageStyle {
             `;
             document.documentElement.appendChild(style);
 
+            const promptSelector = '\(composerSelector)';
             const controls = 'button, a, input, select, textarea, [role="button"], [role="tab"], [role="switch"], [role="radio"], [contenteditable="true"]';
             const label = element => (element.getAttribute('aria-label') || element.textContent || '').trim();
             const hideModeSwitch = () => {
@@ -97,10 +141,10 @@ enum QuickChatPageStyle {
                 }
             };
             const styleComposer = () => {
-                const prompt = document.querySelector('#prompt-textarea, #mobile-composer-prompt');
+                const prompt = document.querySelector(promptSelector);
                 const form = prompt?.closest('form');
                 if (!form) return;
-                let surface = form;
+                let surface = prompt.closest('[data-composer-body]') || form;
                 for (let element = prompt.parentElement; element && form.contains(element); element = element.parentElement) {
                     if (parseFloat(getComputedStyle(element).borderTopLeftRadius) >= 12) surface = element;
                 }
@@ -124,42 +168,38 @@ enum QuickChatPageStyle {
                 }
             };
             const trimPageChrome = () => {
-                const topControl = selector => [...document.querySelectorAll(selector)].find(element => {
-                    const rect = element.getBoundingClientRect();
-                    return rect.top < 64 && rect.bottom > 0 && rect.width > 0 &&
-                        !element.closest('aside, [role="dialog"], #stage-slideover-sidebar');
-                });
-                const sidebar = topControl('[data-testid="open-sidebar-button"], [data-testid="close-sidebar-button"], [aria-label="Open sidebar"], [aria-label="Close sidebar"]');
-                const newChat = topControl('[data-testid="create-new-chat-button"], [data-testid="new-chat-button"], [aria-label="New chat"]');
-                let header = (sidebar || newChat)?.closest('#page-header, header');
-                if (!header) {
-                    for (let parent = (sidebar || newChat)?.parentElement; parent; parent = parent.parentElement) {
-                        const rect = parent.getBoundingClientRect();
-                        if (rect.height > 72) break;
-                        if (rect.width >= innerWidth / 2) header = parent;
+                for (const titlebar of document.querySelectorAll('[data-app-shell-titlebar]')) {
+                    const hasSignIn = [...titlebar.querySelectorAll('button, a')]
+                        .some(element => /^(log in|sign up)$/i.test(label(element)));
+                    if (!hasSignIn) titlebar.toggleAttribute('data-quick-chat-titlebar', true);
+                }
+                const temporary = [...document.querySelectorAll('button[aria-label="Temporary chat"], button[data-testid="temporary-chat-button"]')]
+                    .find(element => !element.closest('[role="dialog"], [role="menu"]'));
+                const header = temporary?.closest('[data-app-shell-titlebar], header, #page-header');
+                if (header) {
+                    header.toggleAttribute('data-quick-chat-titlebar', true);
+                    for (let element = temporary; element && element !== header; element = element.parentElement) {
+                        element.toggleAttribute('data-quick-chat-temporary-branch', true);
                     }
+                    temporary.toggleAttribute('data-quick-chat-temporary-button', true);
                 }
-                const hasSignIn = header && [...header.querySelectorAll('button, a')]
-                    .some(element => /^(log in|sign up)$/i.test(label(element)));
-                sidebar?.toggleAttribute('data-quick-chat-sidebar', true);
-                newChat?.toggleAttribute('data-quick-chat-new-chat', true);
-                if (header && !hasSignIn) {
-                    // Retain the site's handlers for the native buttons, and reserve the header's space.
-                    header.toggleAttribute('data-quick-chat-header', true);
-                }
-                for (const control of document.querySelectorAll('[data-testid="open-sidebar-button"], [data-testid="close-sidebar-button"], [aria-label="Open sidebar"], [aria-label="Close sidebar"]')) {
-                    const rect = control.getBoundingClientRect();
-                    if (rect.top < 64 && rect.bottom > 0) control.toggleAttribute('data-quick-chat-sidebar', true);
-                }
-                const hasComposer = document.querySelector('#prompt-textarea, #mobile-composer-prompt');
-                for (const heading of document.querySelectorAll('main h1, main h2, #thread h1, #thread h2')) {
-                    if (hasComposer && !heading.closest('article, [data-message-author-role], [data-message-id], .markdown, aside, [role="dialog"], [role="alert"]')) {
-                        heading.toggleAttribute('data-quick-chat-welcome', true);
+                const prompt = document.querySelector(promptSelector);
+                const form = prompt?.closest('form');
+                const home = form?.matches('[data-composer-placement="home"]')
+                    ? form.closest('[class~="group/home-composer-layout"]') : null;
+                for (const heading of document.querySelectorAll('main h1, main h2, main .heading-xl, main [role="heading"], #thread h1, #thread h2')) {
+                    if (prompt && !heading.closest('article, [data-message-author-role], [data-message-id], .markdown, aside, [role="dialog"], [role="alert"]')) {
+                        let region = heading;
+                        while (home && region.parentElement && region.parentElement !== home &&
+                               !region.parentElement.contains(form) && !region.parentElement.querySelector('article, [data-message-author-role]')) {
+                            region = region.parentElement;
+                        }
+                        region.toggleAttribute('data-quick-chat-welcome', true);
                     }
                 }
                 if (document.querySelector('[data-quick-chat-disclaimer]')) return;
                 for (const element of document.querySelectorAll('div, p, small, span')) {
-                    if (element.closest('article, [data-message-author-role], .markdown, form, aside, header, #page-header, [data-quick-chat-header], [role="dialog"]') ||
+                    if (element.closest('article, [data-message-author-role], .markdown, form, aside, header, #page-header, [data-quick-chat-titlebar], [role="dialog"]') ||
                         element.querySelector('form, textarea, [contenteditable]')) continue;
                     const text = element.textContent.trim();
                     if (text.length > 350 || !text.startsWith('ChatGPT can make mistakes.')) continue;

@@ -36,12 +36,12 @@ enum Check {
     #search{position:absolute;top:8px;left:100px;width:160px;height:28px}#new-chat{position:absolute;top:60px;left:75px}
     #modes{position:absolute;top:80px;right:0}#other-tabs{position:absolute;top:150px;right:0}
     form{position:absolute;bottom:10px;left:12px;right:12px}#prompt-textarea{height:50px}
-    </style></head><body><div id="root"><header style="height:44px"><button id="sidebar-toggle" aria-label="Close sidebar">Sidebar</button></header><main><article id="previous-conversation">Previous conversation</article>
+    </style></head><body><div id="root"><header data-app-shell-titlebar style="position:absolute;top:0;z-index:30;height:52px;width:100%"><button aria-label="Show sidebar">Sidebar</button><button id="temporary" aria-label="Temporary chat">Temporary</button></header><main><article id="previous-conversation">Previous conversation</article>
     <form><div id="prompt-textarea" contenteditable="true">Draft</div></form></main>
     <aside id="sidebar" role="dialog"><input id="search" aria-label="Search chats"><button id="new-chat" data-testid="create-new-chat-button">New chat</button></aside>
     <div id="modes"><button role="switch" aria-label="Chat">Chat</button><button role="switch" aria-label="Work">Work</button></div>
     <div id="other-tabs" role="tablist"><button role="tab">Chat</button><button role="tab">Settings</button></div></div>
-    <script>window.sidebarClicks=0;document.querySelector('#sidebar-toggle').onclick=event=>{window.sidebarClicks++;const sidebar=document.querySelector('#sidebar');sidebar.hidden=!sidebar.hidden;event.currentTarget.setAttribute('aria-label',sidebar.hidden?'Open sidebar':'Close sidebar')};window.newChatClicks=0;document.querySelector('#new-chat').onclick=()=>{window.newChatClicks++;document.querySelector('#previous-conversation')?.remove();document.querySelector('#prompt-textarea').textContent='';document.querySelector('#sidebar').style.display='none'};</script>
+    <script>window.temporaryClicks=0;document.querySelector('#temporary').onclick=()=>{window.temporaryClicks++};window.newChatClicks=0;document.querySelector('#new-chat').onclick=()=>{window.newChatClicks++;document.querySelector('#previous-conversation')?.remove();document.querySelector('#prompt-textarea').textContent='';document.querySelector('#sidebar').style.display='none'};</script>
     </body></html>
     """
     static func check(_ pass:Bool,_ label:String) { print("\(pass ? "PASS" : "FAIL") \(label)"); if !pass { failures += 1 } }
@@ -59,17 +59,7 @@ enum Check {
         let screen=NSScreen.screens.first{$0.frame.intersects(panel.frame)}!
         check(abs(panel.frame.minX-(screen.visibleFrame.midX-panel.frame.width/2))<1 && abs(panel.frame.minY-(screen.visibleFrame.minY+32))<1,"fresh panel opens bottom-center")
         check(panel.frame.size==NSSize(width:440,height:540),"default dimensions match the reference popup")
-        for width in [400.0,440.0,800.0] {
-            panel.setContentSize(NSSize(width:width,height:540))
-            background.layoutSubtreeIfNeeded()
-            let buttons=background.subviews.compactMap{$0 as? NSButton}
-            guard buttons.count==3 else { fatalError("Expected three native header buttons, found \(buttons.count)") }
-            let frames=buttons.map(\.frame)
-            let anchors=buttons.map{$0.alignmentRect(forFrame:$0.frame)}
-            check(anchors[0].minX==10 && anchors[1].minX==40 && anchors[2].maxX==background.bounds.maxX-10 &&
-                  !frames[0].intersects(frames[1]) && !frames[1].intersects(frames[2]),"native header controls do not overlap at width \(width)")
-            check(buttons.allSatisfy { button in background.hitTest(NSPoint(x:button.frame.midX,y:button.frame.midY))===button },"header controls receive clicks at width \(width)")
-        }
+        check(background.subviews.compactMap{$0 as? NSButton}.isEmpty,"no native header buttons can overlap website controls")
         panel.setContentSize(QuickChatPanel.defaultSize)
         background.layoutSubtreeIfNeeded()
         await wait { (try? await web.evaluateJavaScript("!!document.getElementById('quick-chat-page-style')")) as? Bool == true }
@@ -82,17 +72,15 @@ enum Check {
         check(!drag.isHidden,"drag area becomes available on the chat page")
         let nativePoint=NSPoint(x:180,y:background.bounds.maxY-22)
         check(drag.isHidden || drag.hitTest(nativePoint)==nil,"sidebar search is not intercepted by window dragging")
-        let sidebarButton=background.subviews.compactMap{$0 as? NSButton}.first{$0.toolTip?.hasPrefix("Toggle sidebar")==true}!
-        sidebarButton.performClick(nil)
-        await wait { (try? await web.evaluateJavaScript("window.sidebarClicks===1 && document.querySelector('#sidebar').hidden")) as? Bool == true }
-        sidebarButton.performClick(nil)
-        await wait { (try? await web.evaluateJavaScript("window.sidebarClicks===2 && !document.querySelector('#sidebar').hidden")) as? Bool == true }
-        check(true,"native sidebar button closes and reopens the website sidebar")
-        let closeButton=background.subviews.compactMap{$0 as? NSButton}.first!
-        closeButton.performClick(nil)
-        check(!panel.isVisible,"native close button hides the panel")
+        let temporaryPoint=NSPoint(x:22,y:background.bounds.maxY-22)
+        check(drag.hitTest(temporaryPoint)==nil,"Temporary Chat is not intercepted by window dragging")
+        _=try! await web.evaluateJavaScript("document.querySelector('#temporary').click()")
+        check((try! await web.evaluateJavaScript("window.temporaryClicks")) as? Int == 1,"original Temporary Chat click handler is retained")
+        check((try! await web.evaluateJavaScript("document.elementFromPoint(22,22)?.closest('button')?.id==='temporary'")) as? Bool == true,"Temporary Chat is the actual click target at the top left")
+        panel.cancelOperation(nil)
+        check(!panel.isVisible,"Escape action hides the panel")
         controller.show()
-        check(panel.isVisible && background.subviews.contains(web),"showing after close keeps the same web view")
+        check(panel.isVisible && background.subviews.contains(web),"showing after hide keeps the same web view")
         let spy=NavigationSpy()
         web.navigationDelegate=spy
         let event=NSEvent.keyEvent(with:.keyDown,location:.zero,modifierFlags:.command,timestamp:0,windowNumber:panel.windowNumber,context:nil,characters:"n",charactersIgnoringModifiers:"n",isARepeat:false,keyCode:45)!
@@ -103,10 +91,6 @@ enum Check {
         let clean=(try! await web.evaluateJavaScript("!document.querySelector('#previous-conversation') && document.querySelector('#prompt-textarea').textContent===''") ) as! Bool
         if !clean { print(try! await web.evaluateJavaScript("JSON.stringify({previous:!!document.querySelector('#previous-conversation'),draft:document.querySelector('#prompt-textarea').textContent})") as Any) }
         check(clean,"New chat clears the current conversation and draft")
-        let newChatButton=background.subviews.compactMap{$0 as? NSButton}.first{$0.toolTip?.hasPrefix("New chat")==true}!
-        newChatButton.performClick(nil)
-        await wait { (try? await web.evaluateJavaScript("window.newChatClicks===2")) as? Bool == true }
-        check(spy.requests==0,"native New chat button invokes the site action without reloading")
         _=try! await web.evaluateJavaScript("document.querySelector('#new-chat').remove();window.shortcutNewChats=0;document.addEventListener('keydown',event=>{if(event.metaKey&&event.shiftKey&&event.code==='KeyO'){event.preventDefault();window.shortcutNewChats++}})")
         panel.sendEvent(event)
         try? await Task.sleep(for:.milliseconds(150))
