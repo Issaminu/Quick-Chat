@@ -691,9 +691,9 @@ final class HeaderButtons: NSView {
 
     init() {
         super.init(frame: .zero)
-        close = HeaderButton(image: Self.symbol("xmark.circle.fill"), label: "Close Quick Chat (Esc)") { [weak self] in self?.onClose?() }
+        close = HeaderButton(image: Self.symbol("xmark.circle"), label: "Close Quick Chat (Esc)") { [weak self] in self?.onClose?() }
         openInBrowser = HeaderButton(image: Self.openInBrowserImage, label: "Open in Browser") { [weak self] in self?.onOpenInBrowser?() }
-        temporaryChat = HeaderButton(image: Self.temporaryChatImage, label: "Temporary Chat") { [weak self] in self?.onTemporaryChat?() }
+        temporaryChat = HeaderButton(image: Self.temporaryChatImage, activeImage: Self.temporaryChatOnImage, label: "Temporary Chat") { [weak self] in self?.onTemporaryChat?() }
         newChat = HeaderButton(image: Self.newChatImage, label: "New Chat (⌘N)") { [weak self] in self?.onNewChat?() }
         trailingButtons.orientation = .horizontal
         trailingButtons.spacing = 8
@@ -743,6 +743,7 @@ final class HeaderButtons: NSView {
     private static func templateImage(_ draw: @escaping () -> Void) -> NSImage {
         let image = NSImage(size: NSSize(width: 20, height: 20), flipped: true) { _ in
             NSColor.black.setStroke()
+            NSColor.black.setFill()
             draw()
             return true
         }
@@ -815,17 +816,40 @@ final class HeaderButtons: NSView {
         tail.lineJoinStyle = .round
         tail.stroke()
     }
+
+    /// The same speech bubble, filled: a temporary chat is on.
+    private static let temporaryChatOnImage = templateImage {
+        NSBezierPath(ovalIn: NSRect(x: 2.7, y: 1.7, width: 15.6, height: 15.6)).fill()
+        let tail = NSBezierPath()
+        tail.move(to: NSPoint(x: 5.2, y: 13.1))
+        tail.line(to: NSPoint(x: 3.2, y: 17.2))
+        tail.line(to: NSPoint(x: 8.2, y: 16.2))
+        tail.close()
+        tail.lineWidth = 1.6
+        tail.lineJoinStyle = .round
+        tail.fill()
+        tail.stroke()
+    }
 }
 
 /// A borderless icon button like the page's title bar buttons: 36 pt, 8 pt corners, a light
-/// fill on hover and while active.
+/// fill on hover. While active, it shows its active image (such as a filled icon).
 final class HeaderButton: NSButton {
     private let onPress: () -> Void
+    private let normalImage: NSImage
+    private let activeImage: NSImage?
     private var isHovered = false { didSet { updateFill() } }
-    var isActive = false { didSet { updateFill() } }
+    var isActive = false {
+        didSet {
+            image = isActive ? activeImage ?? normalImage : normalImage
+            updateFill()
+        }
+    }
 
-    init(image: NSImage, label: String, onPress: @escaping () -> Void) {
+    init(image: NSImage, activeImage: NSImage? = nil, label: String, onPress: @escaping () -> Void) {
         self.onPress = onPress
+        normalImage = image
+        self.activeImage = activeImage
         super.init(frame: .zero)
         self.image = image
         imagePosition = .imageOnly
@@ -863,7 +887,7 @@ final class HeaderButton: NSButton {
 
     private func updateFill() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            let alpha: CGFloat = isActive ? 0.14 : isHovered ? 0.08 : 0
+            let alpha: CGFloat = isHovered ? 0.08 : 0
             layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(alpha).cgColor
             contentTintColor = isActive ? .labelColor : .secondaryLabelColor
         }

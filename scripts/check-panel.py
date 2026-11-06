@@ -88,8 +88,10 @@ enum Check {
         check(visible(buttons)==["close","open","new"],"conversation shows Close, Open in Browser and New Chat",visible(buttons))
         buttons.update(for:URL(string:"https://chatgpt.com/"))
         check(visible(buttons)==["close","temporary"],"empty chat shows Close and Temporary Chat",visible(buttons))
+        let offImage=buttons.temporaryChat.image
         buttons.update(for:URL(string:"https://chatgpt.com/?temporary-chat=true"))
         check(visible(buttons)==["close","temporary"] && buttons.temporaryChat.isActive,"temporary empty chat shows Close and an active Temporary Chat")
+        check(buttons.temporaryChat.image !== offImage,"an active Temporary Chat shows its filled icon")
         buttons.update(for:URL(string:"https://chatgpt.com/c/abc?temporary-chat=true"))
         check(visible(buttons)==["close","new"],"temporary conversation shows Close and New Chat")
         buttons.update(for:URL(string:"https://auth.openai.com/log-in"))
