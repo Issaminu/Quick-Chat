@@ -162,12 +162,15 @@ enum Check {
         check(panel.frame==frame,"a drag message without a pressed mouse button does nothing")
         _=await js(web,"webkit.messageHandlers.quickChat.postMessage({type:'zoom'})")
         await wait { panel.isMaximized }
-        check(panel.isMaximized && buttons.expand.isActive,"double press on the title bar maximizes, and Expand becomes Shrink")
+        check(panel.isMaximized && buttons.expand.showsOtherImage && !buttons.expand.isActive,"double press on the title bar maximizes, and Expand becomes Shrink (not an on state)")
+        controller.setPointerInside(false)
+        try? await Task.sleep(for:.milliseconds(800))
+        check(buttons.alphaValue == 1,"the large window keeps its title bar when the pointer leaves")
         await wait { panel.frame.width > frame.width && cover.alphaValue == 0 }
         check(panel.frame.width > frame.width && cover.alphaValue == 0,"the cover over the page goes away after the size change",cover.alphaValue)
         _=await js(web,"webkit.messageHandlers.quickChat.postMessage({type:'zoom'})")
         await wait { !panel.isMaximized && panel.frame==frame }
-        check(!panel.isMaximized && panel.frame==frame && !buttons.expand.isActive,"another double press restores the frame","\(panel.isMaximized) \(panel.frame) expected \(frame)")
+        check(!panel.isMaximized && panel.frame==frame && !buttons.expand.showsOtherImage,"another double press restores the frame","\(panel.isMaximized) \(panel.frame) expected \(frame)")
         buttons.expand.performClick(nil)
         await wait { panel.isMaximized }
         check(panel.isMaximized,"Expand does the same as a double press on the title bar")

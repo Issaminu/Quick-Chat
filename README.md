@@ -25,7 +25,7 @@ This is a fork of [shuaibird/Quick-Chat](https://github.com/shuaibird/Quick-Chat
 - **It does not take the focus from your app.** Like Spotlight, the panel takes your typing, but the app you were in stays active.
 - **It looks native.** The panel has the macOS translucent material, rounded corners with a real shadow, and the system font with the system's font smoothing. It follows ChatGPT's light or dark theme.
 - **Only the chat.** The empty chat shows only the composer. Greetings, suggestions, notices, the disclaimer and the selection toolbars are hidden.
-- **The title bar comes when you need it.** It shows while the pointer is over the panel, and fades out 0.5 seconds after the pointer leaves. Then the messages use its space.
+- **The title bar comes when you need it.** In the small panel, it shows while the pointer is over the panel, and fades out 0.5 seconds after the pointer leaves. Then the messages use its space. In the large window, it always shows.
 - **Small or large.** **Expand** (or a double-click on the title bar, or ⌘F) makes the panel a large window with the same chat. **Shrink** makes it small again. The page never shows a half-drawn layout during the change.
 - **Temporary chats.** One click starts a chat that does not go into your history. The icon fills while a temporary chat is on.
 - **Ready when you are.** ChatGPT loads in the background when the app starts. While a page loads, the panel shows a spinner instead of a half-loaded page.
@@ -127,7 +127,7 @@ The ChatGPT shortcuts come from chatgpt.com. They all work in the panel.
 
 ### The title bar
 
-The title bar shows while the pointer is over the panel. All its buttons fade in and out together.
+In the small panel, the title bar shows while the pointer is over the panel, and all its buttons fade in and out together. In the large window, it always shows.
 
 | Button | Action |
 | --- | --- |

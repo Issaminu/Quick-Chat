@@ -131,7 +131,13 @@ final class QuickChatController: NSObject {
         panel.onCancel = { [weak self] in self?.hide(restoreFocus: true) }
         panel.onNewConversation = { [weak self] in self?.newConversation() }
         panel.onToggleSidebar = { [weak self] in self?.toggleSidebar() }
-        panel.onMaximizedChange = { [weak self] maximized in self?.headerButtons?.isExpanded = maximized }
+        panel.onMaximizedChange = { [weak self] maximized in
+            guard let self, let panel = self.panel else { return }
+            self.headerButtons?.isExpanded = maximized
+            // The large window always shows its title bar; the small panel hides it again when
+            // the pointer is not over it.
+            self.setPointerInside(panel.frame.contains(NSEvent.mouseLocation))
+        }
         panel.waitForContent = { [weak self] width in await self?.waitForPageLayout(width: width) }
         panel.resetSizeShortcut = resetSizeShortcut
         panel.maximizeShortcut = maximizeShortcut
@@ -361,11 +367,14 @@ final class QuickChatController: NSObject {
         }
     }
 
-    /// The title bar shows while the pointer is over the panel. It hides 0.5 seconds after the
-    /// pointer leaves, unless the pointer comes back first. `immediately` skips that delay.
+    /// In the small panel, the title bar shows while the pointer is over the panel. It hides 0.5
+    /// seconds after the pointer leaves, unless the pointer comes back first. `immediately` skips
+    /// that delay. In the large window, it always shows.
     func setPointerInside(_ inside: Bool, immediately: Bool = false) {
         hideTitleBar?.cancel()
         hideTitleBar = nil
+        // The large window has room for the title bar, so it always shows there.
+        if panel?.isMaximized == true { return showTitleBar(true) }
         if inside || immediately { return showTitleBar(inside) }
         hideTitleBar = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(500))
@@ -848,7 +857,7 @@ final class HeaderButtons: NSView {
     /// The panel is large (maximized): the button then shrinks it.
     var isExpanded = false {
         didSet {
-            expand.isActive = isExpanded
+            expand.showsOtherImage = isExpanded
             expand.toolTip = isExpanded ? "Shrink (⌘F)" : "Expand (⌘F)"
             expand.setAccessibilityLabel(expand.toolTip)
         }
@@ -1031,18 +1040,16 @@ final class PanelWebView: WKWebView {
 }
 
 /// A borderless icon button like the page's title bar buttons: 36 pt, 8 pt corners, a light
-/// fill on hover. While active, it shows its active image (such as a filled icon).
+/// fill on hover. While active (an "on" state, such as a temporary chat), it shows its other
+/// image (such as a filled icon) and a brighter tint. `showsOtherImage` switches only the image
+/// (such as Expand and Shrink).
 final class HeaderButton: NSButton {
     private let onPress: () -> Void
     private let normalImage: NSImage
     private let activeImage: NSImage?
-    private var isHovered = false { didSet { updateFill() } }
-    var isActive = false {
-        didSet {
-            image = isActive ? activeImage ?? normalImage : normalImage
-            updateFill()
-        }
-    }
+    private var isHovered = false { didSet { if isHovered != oldValue { updateFill() } } }
+    var isActive = false { didSet { updateImage(); updateFill() } }
+    var showsOtherImage = false { didSet { updateImage() } }
 
     init(image: NSImage, activeImage: NSImage? = nil, label: String, onPress: @escaping () -> Void) {
         self.onPress = onPress
@@ -1069,13 +1076,23 @@ final class HeaderButton: NSButton {
 
     @objc private func press() { onPress() }
 
+    private func updateImage() {
+        image = (isActive || showsOtherImage) ? activeImage ?? normalImage : normalImage
+    }
+
     /// One click works also while the panel is not the key window.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    /// AppKit calls this also when the window changes its size. The button can then move away
+    /// from the pointer (or under it) without an "exited" or "entered" event, so the hover state
+    /// is read again from where the pointer is.
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)
         addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+        if let window {
+            isHovered = window.isVisible && bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil))
+        }
     }
 
     override func mouseEntered(with event: NSEvent) { isHovered = true }
