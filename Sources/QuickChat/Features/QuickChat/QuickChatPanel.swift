@@ -15,6 +15,9 @@ final class QuickChatController: NSObject {
     private var webView: WKWebView?
     private var headerButtons: HeaderButtons?
     private var loadingView: LoadingView?
+    private var pointerWatcher: PointerWatcher?
+    /// The pointer is over the panel. The title bar shows only then.
+    private(set) var isPointerInside = true
     private var urlObservation: NSKeyValueObservation?
     private var systemAppearanceObservation: NSKeyValueObservation?
     /// The page's theme, from its last state message.
@@ -69,6 +72,8 @@ final class QuickChatController: NSObject {
         // The panel is non-activating: it takes key input, and the app in front stays active.
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(webView)
+        // No "entered" event comes when the panel appears under the pointer.
+        setPointerInside(panel.frame.contains(NSEvent.mouseLocation))
         focusComposer()
     }
 
@@ -89,6 +94,8 @@ final class QuickChatController: NSObject {
         webView = nil
         headerButtons = nil
         loadingView = nil
+        pointerWatcher = nil
+        isPointerInside = true
         urlObservation = nil
         systemAppearanceObservation = nil
         pageIsDark = nil
@@ -126,6 +133,10 @@ final class QuickChatController: NSObject {
         background.wantsLayer = true
         background.layer?.cornerRadius = CGFloat(QuickChatPageStyle.windowCornerRadius)
         background.layer?.masksToBounds = true
+        let pointerWatcher = PointerWatcher { [weak self] inside in self?.setPointerInside(inside) }
+        background.addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                                  owner: pointerWatcher))
+        self.pointerWatcher = pointerWatcher
         let webView = makeWebView()
         webView.configuration.userContentController.add(PageMessageHandler(self), name: "quickChat")
         let headerButtons = HeaderButtons()
@@ -303,7 +314,10 @@ final class QuickChatController: NSObject {
         case "state":
             // While the page loads, only Close shows; the page cannot use the other buttons yet.
             let ready = message["ready"] as? Bool == true
-            if ready { loadingView?.stop() }
+            if ready {
+                loadingView?.stop()
+                applyPointerState() // the page may render its document element again while it loads
+            }
             headerButtons?.isCloseAllowed = message["close"] as? Bool ?? false
             headerButtons?.isAllowed = ready && message["buttons"] as? Bool == true
             pageIsDark = message["dark"] as? Bool
@@ -311,6 +325,23 @@ final class QuickChatController: NSObject {
         default:
             break
         }
+    }
+
+    /// The title bar (the panel's buttons and the page's title bar) shows only while the pointer
+    /// is over the panel. While it is hidden, messages can use its space.
+    func setPointerInside(_ inside: Bool) {
+        guard inside != isPointerInside else { return }
+        isPointerInside = inside
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2
+            headerButtons?.animator().alphaValue = inside ? 1 : 0
+        }
+        applyPointerState()
+    }
+
+    private func applyPointerState() {
+        let value = isPointerInside ? "inside" : "outside"
+        webView?.evaluateJavaScript("document.documentElement.dataset.quickChatPointer = '\(value)'")
     }
 
     /// The panel's material and buttons match the page's theme. When the page follows the system
@@ -435,6 +466,7 @@ extension QuickChatController: WKUIDelegate, WKNavigationDelegate, WKDownloadDel
     /// A new ChatGPT page shows a placeholder until its HTML loads; the loading view covers it
     /// until the page reports that it is ready. Other pages (such as sign-in) show as they load.
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        applyPointerState()
         if QuickChatLocation(webView.url).isChatGPT { loadingView?.start() } else { loadingView?.stop() }
     }
 
@@ -982,6 +1014,17 @@ final class LoadingView: NSVisualEffectView {
 
     override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+/// Reports when the pointer enters or leaves the panel.
+final class PointerWatcher: NSObject {
+    private let onChange: (Bool) -> Void
+
+    init(onChange: @escaping (Bool) -> Void) { self.onChange = onChange }
+
+    // The names that a tracking area calls on its owner.
+    @objc(mouseEntered:) func mouseEntered(with event: NSEvent) { onChange(true) }
+    @objc(mouseExited:) func mouseExited(with event: NSEvent) { onChange(false) }
 }
 
 /// Page messages go to the controller; the handler does not retain it.

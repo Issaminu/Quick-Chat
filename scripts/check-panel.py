@@ -132,6 +132,15 @@ enum Check {
         await wait { (await js(web,"clicks.home")) as? Int == 1 }
         check((await js(web,"clicks.home")) as? Int == 1 && spy.requests==0,"without that button, New Chat uses the page's Home link")
 
+        controller.setPointerInside(false)
+        await wait { buttons.alphaValue == 0 }
+        let pointerOutside=(await js(web,"document.documentElement.dataset.quickChatPointer")) as? String
+        check(buttons.alphaValue == 0 && pointerOutside == "outside","the title bar hides while the pointer is outside the panel")
+        controller.setPointerInside(true)
+        await wait { buttons.alphaValue == 1 }
+        let pointerInside=(await js(web,"document.documentElement.dataset.quickChatPointer")) as? String
+        check(buttons.alphaValue == 1 && pointerInside == "inside","the title bar shows again when the pointer comes back")
+
         let frame=panel.frame
         _=await js(web,"webkit.messageHandlers.quickChat.postMessage({type:'drag'})")
         try? await Task.sleep(for:.milliseconds(200))

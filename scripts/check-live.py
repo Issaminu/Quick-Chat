@@ -97,6 +97,7 @@ enum Check {
             print("FAIL the signed-in ChatGPT page did not load; sign in to Quick Chat first")
             exit(1)
         }
+        controller.setPointerInside(true) // the title bar shows only while the pointer is over the panel
         // The checks use the default size; the saved frame is put back at the end.
         let savedFrame=panel.frame
         panel.setFrame(NSRect(origin:savedFrame.origin,size:QuickChatPanel.defaultSize),display:true)

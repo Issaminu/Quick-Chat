@@ -178,6 +178,14 @@ enum PageStyleCheck {
                 if !result[name]! { failures += 1 }
             }
         }
+        _ = try await web.evaluateJavaScript("document.documentElement.dataset.quickChatPointer = 'outside'")
+        try await Task.sleep(for: .milliseconds(400))
+        let hidden = try await web.evaluateJavaScript("""
+            getComputedStyle(document.querySelector('header')).opacity === '0' &&
+            getComputedStyle(document.documentElement).getPropertyValue('--quick-chat-title-bar-shown').trim() === '0'
+            """) as? Bool == true
+        print("\(hidden ? "PASS" : "FAIL") pointer outside the panel: the title bar is hidden and messages may use its space")
+        if !hidden { failures += 1 }
         window.orderOut(nil)
         print("\(failures) failed checks")
         exit(failures == 0 ? 0 : 1)
