@@ -42,11 +42,10 @@ final class QuickChatController: NSObject {
     /// Resizes the panel back to `QuickChatPanel.defaultSize` (no-op if it was never built).
     func resetSize() { panel?.resetSize() }
 
-    /// Hides the panel whenever it's visible (focused or not), otherwise shows it. Focus goes
-    /// back to the previous app only if the panel had it.
+    /// Hides the panel whenever it's visible (focused or not), otherwise shows it.
     func toggle() {
         if let panel, panel.isVisible {
-            hide(restoreFocus: panel.isKeyWindow && NSApp.isActive)
+            hide(restoreFocus: panel.isKeyWindow)
         } else {
             show()
         }
@@ -61,17 +60,18 @@ final class QuickChatController: NSObject {
             crashReloads = []
             reload(webView)
         }
-        NSApp.activate()
+        // The panel is non-activating: it takes key input, and the app in front stays active.
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(webView)
         focusComposer()
     }
 
-    /// `restoreFocus`: give focus back to the app that was frontmost before showing.
+    /// `restoreFocus`: give focus back to the app that was frontmost before showing. That app
+    /// usually stays active, as the panel does not activate Quick Chat; only a file dialog does.
     func hide(restoreFocus: Bool) {
         guard let panel, panel.isVisible else { return }
         panel.orderOut(nil)
-        if restoreFocus { previousApp?.activate() }
+        if restoreFocus && NSApp.isActive { previousApp?.activate() }
     }
 
     /// Closes the panel and releases the web view (the sign-in session stays in the data store).
@@ -292,6 +292,8 @@ final class QuickChatController: NSObject {
             dragPanel()
         case "zoom":
             panel?.toggleMaximize()
+        case "escape":
+            hide(restoreFocus: true)
         case "state":
             // While the page loads, only Close shows; the page cannot use the other buttons yet.
             let ready = message["ready"] as? Bool == true
@@ -465,6 +467,7 @@ extension QuickChatController: WKUIDelegate, WKNavigationDelegate, WKDownloadDel
         let open = NSOpenPanel()
         open.allowsMultipleSelection = parameters.allowsMultipleSelection
         open.canChooseDirectories = parameters.allowsDirectories
+        NSApp.activate() // a file dialog needs an active app
         open.beginSheetModal(for: panel) { response in
             completionHandler(response == .OK ? open.urls : nil)
         }
@@ -525,7 +528,9 @@ final class QuickChatPanel: NSPanel {
 
     init(contentRect: NSRect) {
         super.init(contentRect: contentRect,
-                   styleMask: [.borderless, .resizable],
+                   // Non-activating: the panel takes key input, but the app in front stays
+                   // active, so its window keeps focus (like Spotlight).
+                   styleMask: [.borderless, .resizable, .nonactivatingPanel],
                    backing: .buffered, defer: false)
         title = "ChatGPT"
         // Join full-screen spaces without becoming a full-screen tile.
@@ -546,7 +551,7 @@ final class QuickChatPanel: NSPanel {
     }
 
     override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
+    override var canBecomeMain: Bool { false }
 
     /// Window ▸ Zoom uses the same maximize behavior as the drag region and shortcut.
     override func zoom(_ sender: Any?) { toggleMaximize() }
@@ -594,10 +599,20 @@ final class QuickChatPanel: NSPanel {
     }
 
     /// Leaves the maximized state as is (frame-wise) and resumes autosaving the current frame.
+    /// Setting the autosave name applies the frame saved under it. That frame can be from other
+    /// screen bounds (for example, before the Dock moved), so the current frame is saved first and
+    /// kept.
     private func endMaximize() {
         restoreFrame = nil
-        setFrameAutosaveName(Self.autosaveName)
+        let current = frame
         saveFrame(usingName: Self.autosaveName)
+        setFrameAutosaveName(Self.autosaveName)
+        if frame != current {
+            isSettingFrame = true
+            setFrame(current, display: true)
+            isSettingFrame = false
+            saveFrame(usingName: Self.autosaveName)
+        }
     }
 
     /// The user moved or resized the maximized panel: that frame becomes their own.

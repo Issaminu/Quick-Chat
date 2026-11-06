@@ -140,13 +140,22 @@ enum Check {
         check(panel.isMaximized,"double press on the title bar maximizes")
         _=await js(web,"webkit.messageHandlers.quickChat.postMessage({type:'zoom'})")
         await wait { !panel.isMaximized && panel.frame==frame }
-        check(!panel.isMaximized && panel.frame==frame,"another double press restores the frame")
+        check(!panel.isMaximized && panel.frame==frame,"another double press restores the frame","\(panel.isMaximized) \(panel.frame) expected \(frame)")
 
         buttons.close.performClick(nil)
         check(!panel.isVisible,"Close hides the panel")
         controller.show()
         panel.cancelOperation(nil)
         check(!panel.isVisible,"Escape action hides the panel")
+        controller.show()
+        _=await js(web,"document.querySelector('#draft').addEventListener('keydown', e => e.preventDefault()); document.querySelector('#draft').dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}))")
+        await wait { !panel.isVisible }
+        check(!panel.isVisible,"Esc in the composer hides the panel, although the composer claims the key")
+        controller.show()
+        _=await js(web,"document.body.insertAdjacentHTML('beforeend','<div id=\"menu\" role=\"menu\">Menu</div>'); document.querySelector('#draft').dispatchEvent(new KeyboardEvent('keydown', {key:'Escape', bubbles:true}))")
+        try? await Task.sleep(for:.milliseconds(300))
+        check(panel.isVisible,"while a menu is open, Esc goes to the menu and the panel stays")
+        _=await js(web,"document.querySelector('#menu').remove()")
         controller.show()
         check(panel.isVisible && background.subviews.contains(web),"showing after hide keeps the same web view")
 

@@ -157,6 +157,15 @@ enum QuickChatPageStyle {
                 post({ type: event.detail === 2 ? "zoom" : "drag" });
             }, true);
 
+            // Esc hides the panel. The composer always claims Esc, so the page does not pass it on.
+            // While a menu, a dialog, a popup, or the sidebar is open, Esc closes that instead.
+            const open = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-radix-popper-content-wrapper], [aria-haspopup][aria-expanded="true"], header [aria-expanded="true"]';
+            window.addEventListener("keydown", event => {
+                if (event.key !== "Escape" || event.isComposing || event.repeat) return;
+                if ([...document.querySelectorAll(open)].some(element => element.getClientRects().length > 0)) return;
+                post({ type: "escape" });
+            }, true);
+
             // The panel's close button sits at the top left of the page's title bar, and its other
             // buttons at the top right of a chat page's title bar (the signed-in pages with a
             // composer). Each hides while something covers its corner (the sidebar, a menu, a

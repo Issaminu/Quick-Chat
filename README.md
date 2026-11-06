@@ -48,7 +48,7 @@ Quick Chat enables its global shortcut automatically when the app launches; the 
 - Drag an empty area at the top of the chat to move the panel. Double-click that area, or press ⌘F, to maximize or restore its size. ⌘O resets it to the default size.
 - While a page loads, the panel shows a spinner instead of ChatGPT's unstyled placeholder page.
 - The panel follows ChatGPT's light or dark theme. Text uses the system font with the system's font smoothing, and message text is 15 points, like ChatGPT's companion window.
-- It stays on top of other windows, including full-screen apps, and doesn't hide when you click elsewhere. The shortcut, Esc or ⌘W hides it.
+- It stays on top of other windows, including full-screen apps, and doesn't hide when you click elsewhere. The shortcut, Esc or ⌘W hides it. Like Spotlight, it takes your typing without making Quick Chat the active app, so the app you were in keeps its focus.
 - Reopening the panel returns to the conversation you left. Press ⌘N to trigger ChatGPT’s New chat action without reloading the page; the previous chat stays in your history.
 - Sign in once inside the panel. **Sign Out of Quick Chat** clears the panel's website data.
 - Voice works; macOS asks for microphone access the first time.
