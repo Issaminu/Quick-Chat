@@ -8,13 +8,13 @@ import tempfile
 
 repo=Path(__file__).resolve().parents[1]
 root=Path(tempfile.mkdtemp(prefix='quickchat-panel-check-'))
-source=repo/'Sources/QuickChat/Features/QuickChat/QuickChatPanel.swift'
+source=repo/'Sources/QuickChat/Features/QuickChat/QuickChatController.swift'
 s=source.read_text().replace('private func makePanel()', 'func makePanel()')
 a='\n        webView.load(URLRequest(url: Self.chatURL))\n'
 assert s.count(a)==1
 s=s.replace(a,'\n        webView.loadHTMLString(Check.fixture, baseURL: URL(string:"https://chatgpt.com/c/previous")!)\n')
 s=s.replace('config.websiteDataStore = .default()','config.websiteDataStore = .nonPersistent()')
-(root/'QuickChatPanel.swift').write_text(s)
+(root/'QuickChatController.swift').write_text(s)
 (root/'main.swift').write_text(r'''
 import AppKit
 import WebKit
@@ -236,8 +236,8 @@ MainActor.assumeIsolated {
 ''')
 app=root/'QuickChatPanelCheck.app'
 (app/'Contents/MacOS').mkdir(parents=True)
-sources=[str(p) for p in sorted((repo/'Sources/QuickChat').rglob('*.swift')) if p.name not in ('main.swift','QuickChatPanel.swift')]
-subprocess.run(['swiftc','-swift-version','6','-warnings-as-errors','-o',str(app/'Contents/MacOS/Check'),*sources,str(root/'QuickChatPanel.swift'),str(root/'main.swift')],check=True,timeout=120)
+sources=[str(p) for p in sorted((repo/'Sources/QuickChat').rglob('*.swift')) if p.name not in ('main.swift','QuickChatController.swift')]
+subprocess.run(['swiftc','-swift-version','6','-warnings-as-errors','-o',str(app/'Contents/MacOS/Check'),*sources,str(root/'QuickChatController.swift'),str(root/'main.swift')],check=True,timeout=120)
 (app/'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleExecutable':'Check','CFBundleIdentifier':'local.quickchat.panelcheck','CFBundleName':'Quick Chat Panel Check','CFBundlePackageType':'APPL','LSUIElement':True}))
 subprocess.run(['codesign','--force','--sign','-',str(app)],check=True)
 print('Check directory: '+str(root),flush=True)

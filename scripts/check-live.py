@@ -9,13 +9,13 @@ import tempfile
 
 repo=Path(__file__).resolve().parents[1]
 root=Path(tempfile.mkdtemp(prefix='quickchat-live-check-'))
-source=repo/'Sources/QuickChat/Features/QuickChat/QuickChatPanel.swift'
+source=repo/'Sources/QuickChat/Features/QuickChat/QuickChatController.swift'
 panel=source.read_text().replace('private func makePanel()', 'func makePanel()')
 # The check must not change Quick Chat's quit flag or clear your drafts.
 for old, new in (('defaults.set(false, forKey: key)', ''), ('return quitNormally', 'return false')):
     assert panel.count(old) == 1, old
     panel = panel.replace(old, new)
-(root/'QuickChatPanel.swift').write_text(panel)
+(root/'QuickChatController.swift').write_text(panel)
 (root/'main.swift').write_text(r'''
 import AppKit
 import WebKit
@@ -206,8 +206,8 @@ MainActor.assumeIsolated {
 ''')
 app=root/'QuickChatLiveCheck.app'
 (app/'Contents/MacOS').mkdir(parents=True)
-sources=[str(p) for p in sorted((repo/'Sources/QuickChat').rglob('*.swift')) if p.name not in ('main.swift','QuickChatPanel.swift')]
-subprocess.run(['swiftc','-swift-version','6','-warnings-as-errors','-o',str(app/'Contents/MacOS/QuickChat'),*sources,str(root/'QuickChatPanel.swift'),str(root/'main.swift')],check=True,timeout=120)
+sources=[str(p) for p in sorted((repo/'Sources/QuickChat').rglob('*.swift')) if p.name not in ('main.swift','QuickChatController.swift')]
+subprocess.run(['swiftc','-swift-version','6','-warnings-as-errors','-o',str(app/'Contents/MacOS/QuickChat'),*sources,str(root/'QuickChatController.swift'),str(root/'main.swift')],check=True,timeout=120)
 # Quick Chat's bundle identifier, so the check uses Quick Chat's signed-in session.
 (app/'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleExecutable':'QuickChat','CFBundleIdentifier':'dev.shuaibird.quickchat','CFBundleName':'Quick Chat Live Check','CFBundlePackageType':'APPL','LSUIElement':True}))
 subprocess.run(['codesign','--force','--sign','-',str(app)],check=True)
