@@ -1,0 +1,44 @@
+name: Checks
+
+# Builds the app and runs the checks that need no ChatGPT account: the page style on a local
+# page with chatgpt.com's hooks, and the panel in an isolated test app. The live check
+# (scripts/check-live.py) needs a signed-in session, so it runs only on a developer's Mac.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      XCODE_APP: /Applications/Xcode_26.6.app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s "$XCODE_APP"
+          swift --version
+
+      - name: Build the app (ad-hoc signed)
+        run: CODESIGN_IDENTITY=- ./scripts/build-app.sh
+
+      - name: Page style check
+        run: |
+          swiftc -swift-version 6 Sources/QuickChat/Features/QuickChat/QuickChatPageStyle.swift scripts/check-page-style.swift -o "$RUNNER_TEMP/page-style-check"
+          "$RUNNER_TEMP/page-style-check"
+
+      - name: Panel check
+        run: python3 scripts/check-panel.py
