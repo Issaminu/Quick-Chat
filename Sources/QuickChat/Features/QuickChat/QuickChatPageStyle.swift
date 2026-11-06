@@ -165,6 +165,13 @@ enum QuickChatPageStyle {
             user-select: text !important;
         }
 
+        /* Like a native app, focus rings show only while you move the focus with the keyboard
+           (after Tab; the page script sets data-quick-chat-keyboard). A click, or a button of the
+           panel that presses a page button, shows none. */
+        html:not([data-quick-chat-keyboard]) :is(:focus-visible, :focus-visible::before, :focus-visible::after) {
+            outline: none !important;
+        }
+
         /* No toolbars on selected text: "Ask ChatGPT" on a message, and text formatting in the
            composer. Both are floating boxes whose content is a toolbar of buttons
            (role="presentation"); menus and other popovers have other content. */
@@ -269,6 +276,11 @@ enum QuickChatPageStyle {
             const caretSoon = () => requestAnimationFrame(caretInView);
             for (const name of ["input", "paste", "keyup"]) document.addEventListener(name, caretSoon, true);
             document.addEventListener("selectionchange", caretSoon);
+
+            // Focus rings: on with Tab, off with the next press of the mouse or the trackpad.
+            const root = document.documentElement;
+            window.addEventListener("keydown", event => { if (event.key === "Tab") root.dataset.quickChatKeyboard = ""; }, true);
+            window.addEventListener("pointerdown", () => { delete root.dataset.quickChatKeyboard; }, true);
 
             // Esc hides the panel. The composer always claims Esc, so the page does not pass it on.
             // While a menu, a dialog, a popup, or the sidebar is open, Esc closes that instead.

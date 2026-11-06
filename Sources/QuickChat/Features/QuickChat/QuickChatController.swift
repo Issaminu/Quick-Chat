@@ -307,11 +307,14 @@ final class QuickChatController: NSObject {
             }
     }
 
-    /// Opens or closes the page's sidebar with the page's own (hidden) sidebar button.
+    /// Opens or closes the page's sidebar with the page's own (hidden) sidebar button. The page
+    /// then moves the focus to a sidebar button, which opens that button's tooltip; the panel
+    /// takes the focus off it again, as a click on the page would leave no focused button.
     private func toggleSidebar() {
         webView?.evaluateJavaScript("""
             [...document.querySelectorAll('header[data-app-shell-titlebar] button[aria-controls]')]
                 .find(element => element.getClientRects().length > 0)?.click();
+            setTimeout(() => { if (document.activeElement?.matches('button, [role="button"]')) document.activeElement.blur(); }, 60);
             """)
     }
 
