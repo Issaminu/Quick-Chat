@@ -7,7 +7,7 @@ enum QuickChatPageStyle {
             const style = document.createElement("style");
             style.id = "quick-chat-page-style";
             style.textContent = `
-                main, #thread {
+                :root {
                     --app-color-background-surface: transparent !important;
                     --app-color-background-surface-under: transparent !important;
                     --main-surface-primary: transparent !important;
@@ -19,9 +19,31 @@ enum QuickChatPageStyle {
                     background: transparent !important;
                 }
                 aside, [role="dialog"], [role="menu"], [role="listbox"], #stage-slideover-sidebar {
+                    --app-color-background-surface: Canvas !important;
+                    --app-color-background-surface-under: Canvas !important;
+                    --main-surface-primary: Canvas !important;
+                    --main-surface-background: Canvas !important;
+                    --bg-primary: Canvas !important;
                     background-color: Canvas !important;
                 }
-                [data-quick-chat-mode-switcher] { display: none !important; }
+                [data-testid="open-sidebar-button"], [data-testid="create-new-chat-button"],
+                [aria-label="Open sidebar"], [aria-label="Close sidebar"], [aria-label="New chat"] {
+                    background: transparent !important;
+                }
+                [data-quick-chat-header] { visibility: hidden !important; }
+                [data-quick-chat-sidebar], [data-quick-chat-new-chat] {
+                    visibility: visible !important;
+                    position: fixed !important;
+                    top: 8px !important;
+                    width: 28px !important;
+                    height: 28px !important;
+                    margin: 0 !important;
+                    padding: 4px !important;
+                    background: transparent !important;
+                }
+                [data-quick-chat-sidebar] { left: 40px !important; right: auto !important; }
+                [data-quick-chat-new-chat] { right: 10px !important; left: auto !important; }
+                [data-quick-chat-mode-switcher], [data-quick-chat-disclaimer] { display: none !important; }
                 *, *::before, *::after {
                     scrollbar-width: none !important;
                     scrollbar-gutter: auto !important;
@@ -59,12 +81,57 @@ enum QuickChatPageStyle {
                     }
                 }
             };
+            const trimPageChrome = () => {
+                const topControl = selector => [...document.querySelectorAll(selector)].find(element => {
+                    const rect = element.getBoundingClientRect();
+                    return rect.top < 64 && rect.bottom > 0 && rect.width > 0 &&
+                        !element.closest('aside, [role="dialog"], #stage-slideover-sidebar');
+                });
+                const sidebar = topControl('[data-testid="open-sidebar-button"], [data-testid="close-sidebar-button"], [aria-label="Open sidebar"], [aria-label="Close sidebar"]');
+                const newChat = topControl('[data-testid="create-new-chat-button"], [data-testid="new-chat-button"], [aria-label="New chat"]');
+                let header = (sidebar || newChat)?.closest('#page-header, header');
+                if (!header) {
+                    for (let parent = (sidebar || newChat)?.parentElement; parent; parent = parent.parentElement) {
+                        const rect = parent.getBoundingClientRect();
+                        if (rect.height > 72) break;
+                        if (rect.width >= innerWidth / 2) header = parent;
+                    }
+                }
+                const hasSignIn = header && [...header.querySelectorAll('button, a')]
+                    .some(element => /^(log in|sign up)$/i.test(label(element)));
+                if (header && !hasSignIn) {
+                    // Keep the site's handlers and layout, exposing just its two icon buttons.
+                    header.toggleAttribute('data-quick-chat-header', true);
+                    sidebar?.toggleAttribute('data-quick-chat-sidebar', true);
+                    newChat?.toggleAttribute('data-quick-chat-new-chat', true);
+                }
+                for (const control of document.querySelectorAll('[data-testid="open-sidebar-button"], [data-testid="close-sidebar-button"], [aria-label="Open sidebar"], [aria-label="Close sidebar"]')) {
+                    const rect = control.getBoundingClientRect();
+                    if (rect.top < 64 && rect.bottom > 0) control.toggleAttribute('data-quick-chat-sidebar', true);
+                }
+                if (document.querySelector('[data-quick-chat-disclaimer]')) return;
+                for (const element of document.querySelectorAll('div, p, small, span')) {
+                    if (element.closest('article, [data-message-author-role], .markdown, form, aside, header, #page-header, [data-quick-chat-header], [role="dialog"]') ||
+                        element.querySelector('form, textarea, [contenteditable]')) continue;
+                    const text = element.textContent.trim();
+                    if (text.length > 350 || !text.startsWith('ChatGPT can make mistakes.')) continue;
+                    let disclaimer = element;
+                    while (disclaimer.parentElement?.textContent.trim() === text &&
+                           !disclaimer.parentElement.querySelector('form, textarea, [contenteditable]')) {
+                        disclaimer = disclaimer.parentElement;
+                    }
+                    disclaimer.toggleAttribute('data-quick-chat-disclaimer', true);
+                    break;
+                }
+            };
             let pending = false;
             let previous = '';
             const refresh = () => {
                 pending = false;
                 hideModeSwitch();
+                trimPageChrome();
                 const rectangles = [...document.querySelectorAll(controls)]
+                    .filter(element => getComputedStyle(element).visibility !== 'hidden')
                     .map(element => element.getBoundingClientRect())
                     .filter(rect => rect.top < 44 && rect.bottom > 0 && rect.width > 0 && rect.height > 0)
                     .map(rect => [rect.left, rect.top, rect.width, rect.height]);

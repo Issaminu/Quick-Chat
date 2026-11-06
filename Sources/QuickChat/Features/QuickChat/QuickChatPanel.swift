@@ -125,6 +125,20 @@ final class QuickChatController: NSObject {
             dragRegion.topAnchor.constraint(equalTo: background.topAnchor),
             dragRegion.heightAnchor.constraint(equalToConstant: 44),
         ])
+        let closeButton = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close Quick Chat")!,
+                                   target: panel, action: #selector(QuickChatPanel.cancelOperation(_:)))
+        closeButton.isBordered = false
+        closeButton.contentTintColor = .secondaryLabelColor
+        closeButton.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+        closeButton.toolTip = "Close Quick Chat (Esc)"
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        background.addSubview(closeButton)
+        NSLayoutConstraint.activate([
+            closeButton.leadingAnchor.constraint(equalTo: background.leadingAnchor, constant: 10),
+            closeButton.topAnchor.constraint(equalTo: background.topAnchor, constant: 10),
+            closeButton.widthAnchor.constraint(equalToConstant: 24),
+            closeButton.heightAnchor.constraint(equalToConstant: 24),
+        ])
         panel.contentView = background
 
         restorePosition(of: panel)
