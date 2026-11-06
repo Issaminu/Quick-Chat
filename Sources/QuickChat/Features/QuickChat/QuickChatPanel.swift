@@ -130,6 +130,8 @@ final class QuickChatController: NSObject {
         let panel = QuickChatPanel(contentRect: NSRect(origin: .zero, size: QuickChatPanel.defaultSize))
         panel.onCancel = { [weak self] in self?.hide(restoreFocus: true) }
         panel.onNewConversation = { [weak self] in self?.newConversation() }
+        panel.onMaximizedChange = { [weak self] maximized in self?.headerButtons?.isExpanded = maximized }
+        panel.waitForContent = { [weak self] width in await self?.waitForPageLayout(width: width) }
         panel.resetSizeShortcut = resetSizeShortcut
         panel.maximizeShortcut = maximizeShortcut
 
@@ -152,11 +154,13 @@ final class QuickChatController: NSObject {
         let headerButtons = HeaderButtons()
         headerButtons.onClose = { [weak self] in self?.hide(restoreFocus: true) }
         headerButtons.onSidebar = { [weak self] in self?.toggleSidebar() }
-        headerButtons.onOpenInBrowser = { [weak self] in self?.openInBrowser() }
+        headerButtons.onExpand = { [weak self] in self?.panel?.toggleMaximize() }
         headerButtons.onTemporaryChat = { [weak self] in self?.toggleTemporaryChat() }
         headerButtons.onNewChat = { [weak self] in self?.newConversation() }
         let loadingView = LoadingView()
-        for view in [webView, loadingView, headerButtons] {
+        let cover = ResizeCover()
+        panel.cover = cover
+        for view in [webView, cover, loadingView, headerButtons] {
             view.translatesAutoresizingMaskIntoConstraints = false
             background.addSubview(view)
         }
@@ -165,6 +169,10 @@ final class QuickChatController: NSObject {
             webView.trailingAnchor.constraint(equalTo: background.trailingAnchor),
             webView.topAnchor.constraint(equalTo: background.topAnchor),
             webView.bottomAnchor.constraint(equalTo: background.bottomAnchor),
+            cover.leadingAnchor.constraint(equalTo: background.leadingAnchor),
+            cover.trailingAnchor.constraint(equalTo: background.trailingAnchor),
+            cover.topAnchor.constraint(equalTo: background.topAnchor),
+            cover.bottomAnchor.constraint(equalTo: background.bottomAnchor),
             loadingView.leadingAnchor.constraint(equalTo: background.leadingAnchor),
             loadingView.trailingAnchor.constraint(equalTo: background.trailingAnchor),
             loadingView.topAnchor.constraint(equalTo: background.topAnchor),
@@ -285,16 +293,24 @@ final class QuickChatController: NSObject {
             """)
     }
 
-    /// Opens the current page (a conversation, or a new chat) in the default browser and hides the panel.
-    private func openInBrowser() {
-        let url = webView?.url
-        NSWorkspace.shared.open(QuickChatLocation(url).isChatGPT ? url ?? Self.chatURL : Self.chatURL)
-        hide(restoreFocus: false)
+    /// Waits until the page drew its first frame at `width`, at most 1 second: the second frame
+    /// at that width starts only after the first one is drawn. A long conversation needs a few
+    /// hundred milliseconds to render again at a new width.
+    private func waitForPageLayout(width: CGFloat) async {
+        guard let webView else { return }
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            var finished = false
+            let finish = { if !finished { finished = true; done.resume() } }
+            webView.callAsyncJavaScript("""
+                for (let frames = 0, i = 0; i < 60 && frames < 2; i++) {
+                    await new Promise(resolve => requestAnimationFrame(resolve));
+                    if (Math.abs(innerWidth - width) <= 1) frames++;
+                }
+                """, arguments: ["width": Double(width)], in: nil, in: .page) { _ in finish() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { finish() }
+        }
     }
 
-    /// Starts or leaves a temporary chat with the page's own button, so the page stays loaded.
-    /// The button is "Temporary chat", or "Turn off temporary chat" while one is on. Without that
-    /// button (other languages, a changed page), loads the matching address.
     private func toggleTemporaryChat() {
         guard let webView else { return }
         let leave = QuickChatLocation(webView.url).isTemporary
@@ -332,6 +348,8 @@ final class QuickChatController: NSObject {
                 applyPointerState() // the page may render its document element again while it loads
             }
             headerButtons?.isCloseAllowed = message["close"] as? Bool ?? false
+            headerButtons?.leadingInset = CGFloat(message["left"] as? Double ?? 0)
+            headerButtons?.hasSidebarToggle = message["sidebar"] as? Bool ?? true
             headerButtons?.isAllowed = ready && message["buttons"] as? Bool == true
             pageIsDark = message["dark"] as? Bool
             updateAppearance()
@@ -578,6 +596,12 @@ final class QuickChatPanel: NSPanel {
     static let defaultSize = NSSize(width: 440, height: 540)
     var onCancel: (() -> Void)?
     var onNewConversation: (() -> Void)?
+    /// Called when the panel becomes large (maximized) or goes back to its own frame.
+    var onMaximizedChange: ((Bool) -> Void)?
+    /// Covers the content while the panel changes its size (the controller adds it).
+    var cover: NSView?
+    /// Waits until the content is laid out at the given width (with a time limit).
+    var waitForContent: ((CGFloat) async -> Void)?
     /// Local key combo that calls `resetSize()` while the panel is key (default ⌘O).
     var resetSizeShortcut: Shortcut? = .commandO
     /// Local key combo that calls `toggleMaximize()` while the panel is key (default ⌘F).
@@ -585,8 +609,11 @@ final class QuickChatPanel: NSPanel {
 
     /// The user's frame from before maximizing; non-nil while maximized. Hiding and showing
     /// keep the panel maximized; a relaunch doesn't, as the maximized frame is never autosaved.
-    private var restoreFrame: NSRect?
+    private var restoreFrame: NSRect? {
+        didSet { if (oldValue == nil) != (restoreFrame == nil) { onMaximizedChange?(isMaximized) } }
+    }
     var isMaximized: Bool { restoreFrame != nil }
+    private var frameTransition: Task<Void, Never>?
     /// Set while the panel changes its own frame, so only user moves/resizes end the maximize.
     private var isSettingFrame = false
 
@@ -627,8 +654,7 @@ final class QuickChatPanel: NSPanel {
     /// user's frame from before. The panel stays resizable while maximized.
     func toggleMaximize() {
         if let restoreFrame {
-            setOwnFrame(restoreFrame)
-            endMaximize()
+            setOwnFrame(restoreFrame) { $0.endMaximize() }
         } else {
             guard let visible = (screen ?? NSScreen.main)?.visibleFrame else { return }
             restoreFrame = frame
@@ -651,15 +677,58 @@ final class QuickChatPanel: NSPanel {
             frame.origin.x = min(max(frame.minX, visible.minX), visible.maxX - frame.width)
             frame.origin.y = min(max(frame.minY, visible.minY), visible.maxY - frame.height)
         }
-        setOwnFrame(frame)
-        if isMaximized { endMaximize() }
+        setOwnFrame(frame) { panel in
+            if panel.isMaximized { panel.endMaximize() }
+        }
     }
 
-    /// Animated frame change that doesn't count as the user moving or resizing the panel.
-    private func setOwnFrame(_ frame: NSRect) {
+    /// A frame change that doesn't count as the user moving or resizing the panel. The page
+    /// lays itself out again at every step of a resize, and it switches layouts at some widths.
+    /// So a cover with the panel's material fades in over the page, the panel resizes, and the
+    /// cover fades out when the page is laid out at the new size. The title bar buttons stay.
+    /// `then` runs right after the frame changes.
+    private func setOwnFrame(_ frame: NSRect, then: @escaping (QuickChatPanel) -> Void = { _ in }) {
+        frameTransition?.cancel()
+        guard isVisible, let cover else {
+            applyOwnFrame(frame, animate: false)
+            then(self)
+            return
+        }
+        frameTransition = Task { [weak self] in
+            guard let self else { return }
+            await Self.fade(cover, to: 1, duration: 0.1)
+            self.applyOwnFrame(frame, animate: true)
+            then(self)
+            await self.waitForContent?(frame.width)
+            await Self.fade(cover, to: 0, duration: 0.2)
+            self.frameTransition = nil
+        }
+    }
+
+    override func animationResizeTime(_ newFrame: NSRect) -> TimeInterval { 0.2 }
+
+    private func applyOwnFrame(_ frame: NSRect, animate: Bool) {
         isSettingFrame = true
         defer { isSettingFrame = false }
-        setFrame(frame, display: true, animate: true)
+        setFrame(frame, display: true, animate: animate)
+    }
+
+    private static func fade(_ view: NSView, to alpha: CGFloat, duration: TimeInterval) async {
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = duration
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                view.animator().alphaValue = alpha
+            }, completionHandler: { done.resume() })
+        }
+    }
+
+    /// A hide during a size change must not leave the cover on the page for the next show.
+    override func orderOut(_ sender: Any?) {
+        super.orderOut(sender)
+        frameTransition?.cancel()
+        frameTransition = nil
+        cover?.alphaValue = 0
     }
 
     /// Leaves the maximized state as is (frame-wise) and resumes autosaving the current frame.
@@ -744,16 +813,15 @@ struct QuickChatLocation {
     }
 }
 
-/// The panel's title bar buttons, in line with the page's sidebar button. Close is at the top
-/// left, before the sidebar button. At the top right:
+/// The panel's title bar buttons. At the top left: Close and Sidebar. At the top right:
+/// - Expand (Shrink while the panel is large), on every chat page.
 /// - Empty chat: Temporary Chat.
-/// - Conversation: Open in Browser, New Chat.
-/// - Temporary conversation: New Chat. The browser cannot show a temporary chat.
+/// - Conversation (temporary or not): New Chat.
 /// The view spans the title bar, but only its buttons take clicks; the rest goes to the page.
 final class HeaderButtons: NSView {
     var onClose: (() -> Void)?
     var onSidebar: (() -> Void)?
-    var onOpenInBrowser: (() -> Void)?
+    var onExpand: (() -> Void)?
     var onTemporaryChat: (() -> Void)?
     var onNewChat: (() -> Void)?
     /// The page has a title bar, and nothing (the sidebar, a menu, a dialog) covers its top left.
@@ -764,10 +832,26 @@ final class HeaderButtons: NSView {
 
     private(set) var close: HeaderButton!
     private(set) var sidebar: HeaderButton!
-    private(set) var openInBrowser: HeaderButton!
+    private(set) var expand: HeaderButton!
+    /// The panel is large (maximized): the button then shrinks it.
+    var isExpanded = false {
+        didSet {
+            expand.isActive = isExpanded
+            expand.toolTip = isExpanded ? "Shrink (⌘F)" : "Expand (⌘F)"
+            expand.setAccessibilityLabel(expand.toolTip)
+        }
+    }
     private(set) var temporaryChat: HeaderButton!
     private(set) var newChat: HeaderButton!
     private let leadingButtons = NSStackView()
+    private var leadingConstraint: NSLayoutConstraint!
+    /// Where the page's main area starts: Close and Sidebar sit at its left edge, so a sidebar
+    /// that the page docks on the left in a wide window does not cover them.
+    /// The page has a sidebar button for the panel's Sidebar button to press.
+    var hasSidebarToggle = true { didSet { sidebar.isHidden = !hasSidebarToggle } }
+    var leadingInset: CGFloat = 0 {
+        didSet { leadingConstraint.constant = CGFloat(QuickChatPageStyle.composerInset) + leadingInset }
+    }
     private let trailingButtons = NSStackView()
     private var location = QuickChatLocation(nil)
 
@@ -775,10 +859,11 @@ final class HeaderButtons: NSView {
         super.init(frame: .zero)
         close = HeaderButton(image: Self.symbol("xmark.circle"), label: "Close Quick Chat (Esc)") { [weak self] in self?.onClose?() }
         sidebar = HeaderButton(image: Self.sidebarImage, label: "Sidebar") { [weak self] in self?.onSidebar?() }
-        openInBrowser = HeaderButton(image: Self.openInBrowserImage, label: "Open in Browser") { [weak self] in self?.onOpenInBrowser?() }
+        expand = HeaderButton(image: Self.expandImage, activeImage: Self.symbol("arrow.down.right.and.arrow.up.left"),
+                              label: "Expand (⌘F)") { [weak self] in self?.onExpand?() }
         temporaryChat = HeaderButton(image: Self.temporaryChatImage, activeImage: Self.temporaryChatOnImage, label: "Temporary Chat") { [weak self] in self?.onTemporaryChat?() }
         newChat = HeaderButton(image: Self.newChatImage, label: "New Chat (⌘N)") { [weak self] in self?.onNewChat?() }
-        for (stack, buttons) in [(leadingButtons, [close!, sidebar!]), (trailingButtons, [openInBrowser!, temporaryChat!, newChat!])] {
+        for (stack, buttons) in [(leadingButtons, [close!, sidebar!]), (trailingButtons, [expand!, temporaryChat!, newChat!])] {
             stack.orientation = .horizontal
             stack.spacing = 8
             for button in buttons { stack.addArrangedSubview(button) }
@@ -788,8 +873,9 @@ final class HeaderButtons: NSView {
             addSubview(view)
         }
         let inset = CGFloat(QuickChatPageStyle.composerInset)
+        leadingConstraint = leadingButtons.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset)
         NSLayoutConstraint.activate([
-            leadingButtons.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
+            leadingConstraint,
             leadingButtons.topAnchor.constraint(equalTo: topAnchor, constant: inset),
             trailingButtons.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
             trailingButtons.topAnchor.constraint(equalTo: topAnchor, constant: inset),
@@ -808,7 +894,6 @@ final class HeaderButtons: NSView {
 
     func update(for url: URL?) {
         location = QuickChatLocation(url)
-        openInBrowser.isHidden = !location.isConversation || location.isTemporary
         temporaryChat.isHidden = location.isConversation
         temporaryChat.isActive = location.isTemporary
         newChat.isHidden = !location.isConversation
@@ -854,7 +939,7 @@ final class HeaderButtons: NSView {
 
     /// A window frame with a small window in its corner, like the companion window's
     /// "open in the main window" icon.
-    private static let openInBrowserImage = templateImage {
+    private static let expandImage = templateImage {
         let frame = NSBezierPath()
         frame.move(to: NSPoint(x: 17, y: 8))
         frame.appendArc(withCenter: NSPoint(x: 13.5, y: 6.5), radius: 3.5, startAngle: 0, endAngle: -90, clockwise: true)
@@ -1055,6 +1140,22 @@ final class LoadingView: NSVisualEffectView {
 
     override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+/// The panel's material over the page while the panel changes its size. It takes no clicks.
+final class ResizeCover: NSVisualEffectView {
+    init() {
+        super.init(frame: .zero)
+        material = .underWindowBackground
+        blendingMode = .behindWindow
+        state = .active
+        alphaValue = 0
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 /// Reports when the pointer enters or leaves the panel.

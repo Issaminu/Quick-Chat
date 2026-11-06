@@ -40,13 +40,13 @@ Quick Chat enables its global shortcut automatically when the app launches; the 
 - A global shortcut (⌥Space by default; change it with **Change Shortcut…**) toggles a floating panel with chatgpt.com inside.
 - The panel is 440×540 by default, so chatgpt.com uses its compact layout. It has a native translucent background with no separate title bar. Only the message list has a scroll bar: a thin rounded thumb inside the right edge. Scrolling has no elastic stretch at the ends. Each time the app starts, the panel first opens at the bottom-center of the display under the pointer, a little above the bottom edge. Its size is remembered across launches; its position is kept until the app quits.
 - The title bar shows while the pointer is over the panel, and hides 0.5 seconds after the pointer leaves. All its buttons fade in and out together; while it is hidden, messages use its space. It has **Close** (same as Esc) and **Sidebar** at the top left. The icons follow ChatGPT's companion window. The top right shows:
-  - In an empty chat: **Temporary Chat**.
-  - In a conversation: **Open in Browser** (opens that conversation in your default browser) and **New Chat** (same as ⌘N).
-  - In a temporary conversation: only **New Chat**, because the browser cannot show a temporary chat.
+  - **Expand**: makes the panel a large window that fills the screen, with the same chat. In the large window it becomes **Shrink**.
+  - In an empty chat: **Temporary Chat**. In a conversation: **New Chat** (same as ⌘N).
+- In the large window, ChatGPT docks its row of icons on the left (they show the sidebar when you point at them), and Close sits next to them.
 - The empty chat shows only the composer, at the bottom at every window size: greetings, suggestions and notices are hidden.
 - Selected text shows no toolbar: no "Ask ChatGPT" button on a message, and no formatting toolbar in the composer. The Chat / Work switch, the conversation title and the disclaimer are hidden too.
 - The composer is translucent, with 8-point side and bottom insets and a 12-point corner radius that is concentric with the 20-point window corners. Messages end at the composer's top edge and fade out above it, so no text shows beside, below or through the composer. At the top, messages stop at the bottom edge of the title bar.
-- Drag an empty area at the top of the chat to move the panel. Double-click that area, or press ⌘F, to maximize or restore its size. ⌘O resets it to the default size.
+- Drag an empty area at the top of the chat to move the panel. Double-click that area, or press ⌘F, to expand or shrink it (same as Expand). ⌘O resets it to the default size. During a size change, the panel covers the page with its background and shows it again when the page is laid out at the new size, so the page does not jump.
 - ChatGPT loads in the background when Quick Chat starts, so the panel is usually ready when you first open it. While a page loads, the panel shows a spinner instead of ChatGPT's unstyled placeholder page.
 - The panel follows ChatGPT's light or dark theme. Text uses the system font with the system's font smoothing, and message text is 15 points, like ChatGPT's companion window.
 - It stays on top of other windows, including full-screen apps, and doesn't hide when you click elsewhere. The shortcut, Esc or ⌘W hides it. Like Spotlight, it takes your typing without making Quick Chat the active app, so the app you were in keeps its focus.

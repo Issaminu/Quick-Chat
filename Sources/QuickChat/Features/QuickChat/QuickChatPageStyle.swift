@@ -226,6 +226,10 @@ enum QuickChatPageStyle {
                 // Until the page's own style loads, it has no color scheme; the panel then keeps its theme.
                 const scheme = getComputedStyle(document.documentElement).colorScheme;
                 const titleBar = !!document.querySelector("header[data-app-shell-titlebar]");
+                // In a wide window the page docks its sidebar (or its row of icons) on the left;
+                // the main area then starts to its right.
+                const main = [...document.querySelectorAll("main[data-app-shell-main-surface]")].find(e => e.getClientRects().length);
+                const left = Math.max(0, Math.round(main?.getBoundingClientRect().left ?? 0));
                 const state = {
                     type: "state",
                     // While the HTML loads, the page shows a placeholder with a different composer.
@@ -233,7 +237,10 @@ enum QuickChatPageStyle {
                     ready: document.readyState === "complete" && (loadedAWhileAgo ||
                         !!document.querySelector("form[data-chatgpt-composer]") || !document.querySelector("[data-composer-body]")),
                     // The left corner holds the panel's close and sidebar buttons.
-                    close: titleBar && !covered(26, 26) && !covered(70, 26),
+                    close: titleBar && !covered(left + 26, 26) && !covered(left + 70, 26),
+                    left,
+                    // A docked row of icons shows the sidebar on hover; the page then has no toggle.
+                    sidebar: [...document.querySelectorAll("header[data-app-shell-titlebar] button[aria-controls]")].some(e => e.getClientRects().length),
                     buttons: titleBar && !!document.querySelector('[data-app-shell-active-page="true"] form[data-chatgpt-composer]') &&
                         !covered(innerWidth - 26, 26) && !covered(innerWidth - 70, 26),
                     dark: scheme === "normal" ? null : scheme.includes("dark")

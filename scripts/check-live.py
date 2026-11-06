@@ -30,7 +30,7 @@ enum Check {
         while Date()<end { if await condition() { return }; try? await Task.sleep(for:.milliseconds(100)) }
     }
     static func visible(_ buttons:HeaderButtons) -> [String] {
-        [(buttons.close,"close"),(buttons.sidebar,"sidebar"),(buttons.openInBrowser,"open"),(buttons.temporaryChat,"temporary"),(buttons.newChat,"new")]
+        [(buttons.close,"close"),(buttons.sidebar,"sidebar"),(buttons.expand,"expand"),(buttons.temporaryChat,"temporary"),(buttons.newChat,"new")]
             .filter{!$0.0.isHiddenOrHasHiddenAncestor}.map{$0.1}
     }
     /// Layout facts about the rendered page (the page keeps hidden copies of earlier pages).
@@ -103,7 +103,7 @@ enum Check {
         panel.setFrame(NSRect(origin:savedFrame.origin,size:QuickChatPanel.defaultSize),display:true)
         try? await Task.sleep(for:.seconds(1))
         await checkLayout(web,"empty chat",empty:true)
-        check(visible(buttons)==["close","sidebar","temporary"],"empty chat: panel shows Close, Sidebar and Temporary Chat",await js(web,"return [document.elementFromPoint(innerWidth - 26, 26), document.elementFromPoint(innerWidth - 70, 26)].map(e => e?.outerHTML.slice(0, 160)).join(' | ') + ' active:' + !!document.querySelector('[data-app-shell-active-page=\"true\"] form[data-chatgpt-composer]')") as Any)
+        check(visible(buttons)==["close","sidebar","expand","temporary"],"empty chat: panel shows Close, Sidebar, Expand and Temporary Chat",await js(web,"return [document.elementFromPoint(innerWidth - 26, 26), document.elementFromPoint(innerWidth - 70, 26)].map(e => e?.outerHTML.slice(0, 160)).join(' | ') + ' active:' + !!document.querySelector('[data-app-shell-active-page=\"true\"] form[data-chatgpt-composer]')") as Any)
         // A wide window: the page centers its content and docks the sidebar rail. The panel's
         // own frame is put back afterwards, as this check uses Quick Chat's saved settings.
         let frame=panel.frame
@@ -126,7 +126,7 @@ enum Check {
         try? await Task.sleep(for:.seconds(1))
         check(QuickChatLocation(web.url).isTemporary,"Temporary Chat starts a temporary chat",web.url as Any)
         await checkLayout(web,"temporary chat",empty:true)
-        check(visible(buttons)==["close","sidebar","temporary"],"temporary chat: panel shows Close, Sidebar and Temporary Chat",visible(buttons))
+        check(visible(buttons)==["close","sidebar","expand","temporary"],"temporary chat: panel shows Close, Sidebar, Expand and Temporary Chat",visible(buttons))
         buttons.temporaryChat.performClick(nil)
         await wait(10) { !QuickChatLocation(web.url).isTemporary }
         check(!QuickChatLocation(web.url).isTemporary,"Temporary Chat again leaves the temporary chat",web.url as Any)
@@ -154,7 +154,7 @@ enum Check {
             }
             try? await Task.sleep(for:.seconds(2))
             await checkLayout(web,"conversation",empty:false)
-            check(visible(buttons)==["close","sidebar","open","new"],"conversation: panel shows Close, Sidebar, Open in Browser and New Chat",visible(buttons))
+            check(visible(buttons)==["close","sidebar","expand","new"],"conversation: panel shows Close, Sidebar, Expand and New Chat",visible(buttons))
             panel.sendEvent(NSEvent.keyEvent(with:.keyDown,location:.zero,modifierFlags:.command,timestamp:0,windowNumber:panel.windowNumber,context:nil,characters:"n",charactersIgnoringModifiers:"n",isARepeat:false,keyCode:45)!)
             await wait(10) { !QuickChatLocation(web.url).isConversation }
             check(!QuickChatLocation(web.url).isConversation,"Command-N starts a new chat",web.url as Any)

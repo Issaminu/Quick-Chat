@@ -61,7 +61,7 @@ enum Check {
     }
     static func js(_ web:WKWebView,_ code:String) async -> Any? { try? await web.evaluateJavaScript(code) }
     static func visible(_ buttons:HeaderButtons) -> [String] {
-        [(buttons.close,"close"),(buttons.sidebar,"sidebar"),(buttons.openInBrowser,"open"),(buttons.temporaryChat,"temporary"),(buttons.newChat,"new")]
+        [(buttons.close,"close"),(buttons.sidebar,"sidebar"),(buttons.expand,"expand"),(buttons.temporaryChat,"temporary"),(buttons.newChat,"new")]
             .filter{!$0.0.isHiddenOrHasHiddenAncestor}.map{$0.1}
     }
     static func run() async {
@@ -73,6 +73,7 @@ enum Check {
         let web=background.subviews.compactMap{$0 as? WKWebView}.first!
         let buttons=background.subviews.compactMap{$0 as? HeaderButtons}.first!
         let loading=background.subviews.compactMap{$0 as? LoadingView}.first!
+        let cover=background.subviews.compactMap{$0 as? ResizeCover}.first!
         let screen=NSScreen.screens.first{$0.frame.intersects(panel.frame)}!
         check(abs(panel.frame.minX-(screen.visibleFrame.midX-panel.frame.width/2))<1 && abs(panel.frame.minY-(screen.visibleFrame.minY+32))<1,"fresh panel opens bottom-center")
         check(panel.frame.size==NSSize(width:440,height:540),"default dimensions match the reference popup")
@@ -87,15 +88,15 @@ enum Check {
 
         await wait { visible(buttons).count==4 && !loading.isLoading }
         check(!loading.isLoading,"the loading view hides when the page is ready")
-        check(visible(buttons)==["close","sidebar","open","new"],"conversation shows Close, Sidebar, Open in Browser and New Chat",visible(buttons))
+        check(visible(buttons)==["close","sidebar","expand","new"],"conversation shows Close, Sidebar, Expand and New Chat",visible(buttons))
         buttons.update(for:URL(string:"https://chatgpt.com/"))
-        check(visible(buttons)==["close","sidebar","temporary"],"empty chat shows Close, Sidebar and Temporary Chat",visible(buttons))
+        check(visible(buttons)==["close","sidebar","expand","temporary"],"empty chat shows Close, Sidebar, Expand and Temporary Chat",visible(buttons))
         let offImage=buttons.temporaryChat.image
         buttons.update(for:URL(string:"https://chatgpt.com/?temporary-chat=true"))
-        check(visible(buttons)==["close","sidebar","temporary"] && buttons.temporaryChat.isActive,"temporary empty chat shows Close, Sidebar and an active Temporary Chat")
+        check(visible(buttons)==["close","sidebar","expand","temporary"] && buttons.temporaryChat.isActive,"temporary empty chat shows Close, Sidebar, Expand and an active Temporary Chat")
         check(buttons.temporaryChat.image !== offImage,"an active Temporary Chat shows its filled icon")
         buttons.update(for:URL(string:"https://chatgpt.com/c/abc?temporary-chat=true"))
-        check(visible(buttons)==["close","sidebar","new"],"temporary conversation shows Close, Sidebar and New Chat")
+        check(visible(buttons)==["close","sidebar","expand","new"],"temporary conversation shows Close, Sidebar, Expand and New Chat")
         buttons.update(for:URL(string:"https://auth.openai.com/log-in"))
         check(visible(buttons).isEmpty,"buttons hide on other sites")
         check(buttons.hitTest(NSPoint(x:200,y:20)) == nil,"the title bar between the buttons belongs to the page")
@@ -158,10 +159,18 @@ enum Check {
         check(panel.frame==frame,"a drag message without a pressed mouse button does nothing")
         _=await js(web,"webkit.messageHandlers.quickChat.postMessage({type:'zoom'})")
         await wait { panel.isMaximized }
-        check(panel.isMaximized,"double press on the title bar maximizes")
+        check(panel.isMaximized && buttons.expand.isActive,"double press on the title bar maximizes, and Expand becomes Shrink")
+        await wait { panel.frame.width > frame.width && cover.alphaValue == 0 }
+        check(panel.frame.width > frame.width && cover.alphaValue == 0,"the cover over the page goes away after the size change",cover.alphaValue)
         _=await js(web,"webkit.messageHandlers.quickChat.postMessage({type:'zoom'})")
         await wait { !panel.isMaximized && panel.frame==frame }
-        check(!panel.isMaximized && panel.frame==frame,"another double press restores the frame","\(panel.isMaximized) \(panel.frame) expected \(frame)")
+        check(!panel.isMaximized && panel.frame==frame && !buttons.expand.isActive,"another double press restores the frame","\(panel.isMaximized) \(panel.frame) expected \(frame)")
+        buttons.expand.performClick(nil)
+        await wait { panel.isMaximized }
+        check(panel.isMaximized,"Expand does the same as a double press on the title bar")
+        buttons.expand.performClick(nil)
+        await wait { !panel.isMaximized && panel.frame==frame && cover.alphaValue == 0 }
+        check(!panel.isMaximized && panel.frame==frame,"Shrink restores the frame")
 
         buttons.close.performClick(nil)
         check(!panel.isVisible,"Close hides the panel")
