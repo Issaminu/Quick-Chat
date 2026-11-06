@@ -114,13 +114,13 @@ The ChatGPT shortcuts come from chatgpt.com. They all work in the panel.
 
 In the small panel, the title bar shows while the pointer is over the panel, and all its buttons fade in and out together. In the large window, it always shows.
 
-| Button | Action |
-| --- | --- |
-| Close | Closes the panel (same as Esc). |
-| Sidebar | Opens ChatGPT's sidebar with your chats and projects. |
-| Expand / Shrink | Makes the panel a large window with the same chat, or small again. |
-| Temporary Chat | Starts or ends a temporary chat (in an empty chat). |
-| New Chat | Starts a new chat (in a conversation, same as ⌘N). |
+| Place | Button | Action |
+| --- | --- | --- |
+| Top left | Sidebar | Opens ChatGPT's sidebar with your chats and projects (same as ⌘B). |
+| Top left | Temporary Chat | Starts or ends a temporary chat (in an empty chat). |
+| Top left | New Chat | Starts a new chat (in a conversation, same as ⌘N). |
+| Top right | Expand / Shrink | Makes the panel a large window with the same chat, or small again (same as ⌘F). |
+| Top right | Close | Closes the panel (same as Esc). |
 
 Drag an empty part of the title bar to move the panel. Drag an edge to resize it. Each time the app starts, the panel first opens at its default place. It keeps its size across launches.
 

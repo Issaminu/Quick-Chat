@@ -373,7 +373,8 @@ final class QuickChatController: NSObject {
                 loadingView?.stop()
                 applyPointerState() // the page may render its document element again while it loads
             }
-            headerButtons?.isCloseAllowed = message["close"] as? Bool ?? false
+            headerButtons?.isLeadingAllowed = message["close"] as? Bool ?? false
+            headerButtons?.isChatPage = message["chat"] as? Bool ?? false
             headerButtons?.leadingInset = CGFloat(message["left"] as? Double ?? 0)
             headerButtons?.hasSidebarToggle = message["sidebar"] as? Bool ?? true
             headerButtons?.isAllowed = ready && message["buttons"] as? Bool == true

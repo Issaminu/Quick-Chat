@@ -35,7 +35,7 @@ enum Check {
         while Date()<end { if await condition() { return }; try? await Task.sleep(for:.milliseconds(100)) }
     }
     static func visible(_ buttons:HeaderButtons) -> [String] {
-        [(buttons.close,"close"),(buttons.sidebar,"sidebar"),(buttons.expand,"expand"),(buttons.temporaryChat,"temporary"),(buttons.newChat,"new")]
+        [(buttons.sidebar,"sidebar"),(buttons.temporaryChat,"temporary"),(buttons.newChat,"new"),(buttons.expand,"expand"),(buttons.close,"close")]
             .filter{!$0.0.isHiddenOrHasHiddenAncestor}.map{$0.1}
     }
     /// Layout facts about the rendered page (the page keeps hidden copies of earlier pages).
@@ -79,7 +79,7 @@ enum Check {
         check(composerAlpha > 0 && composerAlpha < 80,"\(state): composer is translucent",composerAlpha)
         check(m["pageAlpha"] as? Int == 0,"\(state): page background is transparent",m["pageAlpha"]!)
         check(m["headerButtons"] as? Int == 0,"\(state): the page draws no title bar buttons (the panel draws them)",m["headerButtons"]!)
-        check(m["sidebarButton"] as? Double == 52,"\(state): the page's sidebar button sits under the panel's sidebar button",m["sidebarButton"]!)
+        check(m["sidebarButton"] as? Double == 8,"\(state): the page's sidebar button sits under the panel's sidebar button",m["sidebarButton"]!)
         check(m["smoothing"] as? String == "auto","\(state): text uses the system's font smoothing",m["smoothing"]!)
         check(m["overscroll"] as? String == "none","\(state): scrolling does not stretch at the ends",m["overscroll"]!)
         if empty {
@@ -110,7 +110,7 @@ enum Check {
         await checkLayout(web,"empty chat",empty:true)
         let toggle="return [...document.querySelectorAll('header button:has(use[href*=\"chat-bubble\"][href*=\"dashed\"])')].some(e => e.getClientRects().length)"
         check((await js(web,toggle)) as? Bool == true,"empty chat: the page's Temporary Chat toggle has its icon hook")
-        check(visible(buttons)==["close","sidebar","expand","temporary"],"empty chat: panel shows Close, Sidebar, Expand and Temporary Chat",await js(web,"return [document.elementFromPoint(innerWidth - 26, 26), document.elementFromPoint(innerWidth - 70, 26)].map(e => e?.outerHTML.slice(0, 160)).join(' | ') + ' active:' + !!document.querySelector('[data-app-shell-active-page=\"true\"] form[data-chatgpt-composer]')") as Any)
+        check(visible(buttons)==["sidebar","temporary","expand","close"],"empty chat: panel shows Sidebar, Temporary Chat, Expand and Close",await js(web,"return [document.elementFromPoint(innerWidth - 26, 26), document.elementFromPoint(innerWidth - 70, 26)].map(e => e?.outerHTML.slice(0, 160)).join(' | ') + ' active:' + !!document.querySelector('[data-app-shell-active-page=\"true\"] form[data-chatgpt-composer]')") as Any)
         // A wide window: the page centers its content and docks the sidebar rail. The panel's
         // own frame is put back afterwards, as this check uses Quick Chat's saved settings.
         let frame=panel.frame
@@ -133,7 +133,7 @@ enum Check {
         try? await Task.sleep(for:.seconds(1))
         check(QuickChatLocation(web.url).isTemporary,"Temporary Chat starts a temporary chat",web.url as Any)
         await checkLayout(web,"temporary chat",empty:true)
-        check(visible(buttons)==["close","sidebar","expand","temporary"],"temporary chat: panel shows Close, Sidebar, Expand and Temporary Chat",visible(buttons))
+        check(visible(buttons)==["sidebar","temporary","expand","close"],"temporary chat: panel shows Sidebar, Temporary Chat, Expand and Close",visible(buttons))
         check((await js(web,toggle)) as? Bool == true,"temporary chat: the page's toggle has its icon hook")
         buttons.temporaryChat.performClick(nil)
         await wait(10) { !QuickChatLocation(web.url).isTemporary }
@@ -162,7 +162,7 @@ enum Check {
             }
             try? await Task.sleep(for:.seconds(2))
             await checkLayout(web,"conversation",empty:false)
-            check(visible(buttons)==["close","sidebar","expand","new"],"conversation: panel shows Close, Sidebar, Expand and New Chat",visible(buttons))
+            check(visible(buttons)==["sidebar","new","expand","close"],"conversation: panel shows Sidebar, New Chat, Expand and Close",visible(buttons))
             // Selected message text: the page's "Ask ChatGPT" toolbar must stay hidden.
             let toolbar=await js(web,"""
                 const rendered = selector => [...document.querySelectorAll(selector)].find(e => e.getClientRects().length);

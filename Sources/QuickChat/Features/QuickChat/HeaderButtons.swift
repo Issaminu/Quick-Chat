@@ -1,9 +1,8 @@
 import AppKit
 
-/// The panel's title bar buttons. At the top left: Close and Sidebar. At the top right:
-/// - Expand (Shrink while the panel is large), on every chat page.
-/// - Empty chat: Temporary Chat.
-/// - Conversation (temporary or not): New Chat.
+/// The panel's title bar buttons.
+/// - Top left: Sidebar, then Temporary Chat (empty chat) or New Chat (conversation).
+/// - Top right: Expand (Shrink while the panel is large), then Close at the far right.
 /// The view spans the title bar, but only its buttons take clicks; the rest goes to the page.
 final class HeaderButtons: NSView {
     var onClose: (() -> Void)?
@@ -12,14 +11,19 @@ final class HeaderButtons: NSView {
     var onTemporaryChat: (() -> Void)?
     var onNewChat: (() -> Void)?
     /// The page has a title bar, and nothing (the sidebar, a menu, a dialog) covers its top left.
-    var isCloseAllowed = false { didSet { updateVisibility() } }
-    /// The page has room for the buttons at the top right: it is a signed-in chat page, and
-    /// nothing covers this corner.
+    var isLeadingAllowed = false { didSet { updateVisibility() } }
+    /// The page is a signed-in chat page (it has a composer).
+    var isChatPage = false { didSet { updateVisibility() } }
+    /// The page has room for the buttons at the top right: it is a chat page, and nothing covers
+    /// this corner. Other pages have their own buttons there.
     var isAllowed = false { didSet { updateVisibility() } }
-
-    private(set) var close: HeaderButton!
-    private(set) var sidebar: HeaderButton!
-    private(set) var expand: HeaderButton!
+    /// The page has a sidebar button for the panel's Sidebar button to press.
+    var hasSidebarToggle = true { didSet { updateVisibility() } }
+    /// Where the page's main area starts: the left buttons sit at its left edge, so a sidebar
+    /// that the page docks on the left in a wide window does not cover them.
+    var leadingInset: CGFloat = 0 {
+        didSet { leadingConstraint.constant = CGFloat(QuickChatPageStyle.composerInset) + leadingInset }
+    }
     /// The panel is large (maximized): the button then shrinks it.
     var isExpanded = false {
         didSet {
@@ -28,29 +32,26 @@ final class HeaderButtons: NSView {
             expand.setAccessibilityLabel(expand.toolTip)
         }
     }
+
+    private(set) var sidebar: HeaderButton!
     private(set) var temporaryChat: HeaderButton!
     private(set) var newChat: HeaderButton!
+    private(set) var expand: HeaderButton!
+    private(set) var close: HeaderButton!
     private let leadingButtons = NSStackView()
-    private var leadingConstraint: NSLayoutConstraint!
-    /// Where the page's main area starts: Close and Sidebar sit at its left edge, so a sidebar
-    /// that the page docks on the left in a wide window does not cover them.
-    /// The page has a sidebar button for the panel's Sidebar button to press.
-    var hasSidebarToggle = true { didSet { sidebar.isHidden = !hasSidebarToggle } }
-    var leadingInset: CGFloat = 0 {
-        didSet { leadingConstraint.constant = CGFloat(QuickChatPageStyle.composerInset) + leadingInset }
-    }
     private let trailingButtons = NSStackView()
+    private var leadingConstraint: NSLayoutConstraint!
     private var location = QuickChatLocation(nil)
 
     init() {
         super.init(frame: .zero)
-        close = HeaderButton(image: Self.symbol("xmark.circle"), label: "Close Quick Chat (Esc)") { [weak self] in self?.onClose?() }
-        sidebar = HeaderButton(image: Self.sidebarImage, label: "Sidebar") { [weak self] in self?.onSidebar?() }
-        expand = HeaderButton(image: Self.expandImage, activeImage: Self.symbol("arrow.down.right.and.arrow.up.left"),
-                              label: "Expand (⌘F)") { [weak self] in self?.onExpand?() }
+        sidebar = HeaderButton(image: Self.sidebarImage, label: "Sidebar (⌘B)") { [weak self] in self?.onSidebar?() }
         temporaryChat = HeaderButton(image: Self.temporaryChatImage, activeImage: Self.temporaryChatOnImage, label: "Temporary Chat") { [weak self] in self?.onTemporaryChat?() }
         newChat = HeaderButton(image: Self.newChatImage, label: "New Chat (⌘N)") { [weak self] in self?.onNewChat?() }
-        for (stack, buttons) in [(leadingButtons, [close!, sidebar!]), (trailingButtons, [expand!, temporaryChat!, newChat!])] {
+        expand = HeaderButton(image: Self.expandImage, activeImage: Self.symbol("arrow.down.right.and.arrow.up.left"),
+                              label: "Expand (⌘F)") { [weak self] in self?.onExpand?() }
+        close = HeaderButton(image: Self.symbol("xmark.circle"), label: "Close Quick Chat (Esc)") { [weak self] in self?.onClose?() }
+        for (stack, buttons) in [(leadingButtons, [sidebar!, temporaryChat!, newChat!]), (trailingButtons, [expand!, close!])] {
             stack.orientation = .horizontal
             stack.spacing = 8
             for button in buttons { stack.addArrangedSubview(button) }
@@ -81,14 +82,15 @@ final class HeaderButtons: NSView {
 
     func update(for url: URL?) {
         location = QuickChatLocation(url)
-        temporaryChat.isHidden = location.isConversation
         temporaryChat.isActive = location.isTemporary
-        newChat.isHidden = !location.isConversation
         updateVisibility()
     }
 
     private func updateVisibility() {
-        leadingButtons.isHidden = !location.isChatGPT || !isCloseAllowed
+        leadingButtons.isHidden = !location.isChatGPT || !isLeadingAllowed
+        sidebar.isHidden = !hasSidebarToggle
+        temporaryChat.isHidden = !isChatPage || location.isConversation
+        newChat.isHidden = !isChatPage || !location.isConversation
         trailingButtons.isHidden = !location.isChatGPT || !isAllowed
     }
 

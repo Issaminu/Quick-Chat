@@ -52,12 +52,9 @@ enum QuickChatPageStyle {
         html { transition: --quick-chat-title-bar-shown 0.2s ease-in-out; }
         html[data-quick-chat-pointer="outside"] { --quick-chat-title-bar-shown: 0; }
         header[data-app-shell-titlebar] { opacity: var(--quick-chat-title-bar-shown) !important; }
-        /* The panel draws its own close and sidebar buttons, so that one fade shows and hides
-           every button of the title bar. The page's sidebar button stays in place under the
-           panel's one (it is what the panel's button clicks), without being drawn. */
-        header[data-app-shell-titlebar] [data-app-shell-header-slot="start"] [data-app-shell-header-slot-content] {
-            margin-inline-start: \#(titleBarButtonSize + composerInset)px !important;
-        }
+        /* The panel draws its own sidebar button, so that one fade shows and hides every button
+           of the title bar. The page's sidebar button stays in place under the panel's one (it is
+           what the panel's button clicks), without being drawn. */
         header[data-app-shell-titlebar] [data-app-shell-header-slot="start"] button[aria-controls] { visibility: hidden !important; }
 
         /* Empty chat: only the composer. This hides every greeting, suggestion, and notice around it.
@@ -310,8 +307,10 @@ enum QuickChatPageStyle {
                     // The page is ready when it has its real composer, or a moment after it loads.
                     ready: document.readyState === "complete" && (loadedAWhileAgo ||
                         !!document.querySelector("form[data-chatgpt-composer]") || !document.querySelector("[data-composer-body]")),
-                    // The left corner holds the panel's close and sidebar buttons.
+                    // The left corner holds the panel's Sidebar and Temporary Chat (or New Chat)
+                    // buttons; they show on chat pages, the pages with a composer.
                     close: titleBar && !covered(left + 26, 26) && !covered(left + 70, 26),
+                    chat: titleBar && !!document.querySelector('[data-app-shell-active-page="true"] form[data-chatgpt-composer]'),
                     left,
                     // A docked row of icons shows the sidebar on hover; the page then has no toggle.
                     sidebar: [...document.querySelectorAll("header[data-app-shell-titlebar] button[aria-controls]")].some(e => e.getClientRects().length),
