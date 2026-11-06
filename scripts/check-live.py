@@ -209,7 +209,7 @@ app=root/'QuickChatLiveCheck.app'
 sources=[str(p) for p in sorted((repo/'Sources/QuickChat').rglob('*.swift')) if p.name not in ('main.swift','QuickChatController.swift')]
 subprocess.run(['swiftc','-swift-version','6','-warnings-as-errors','-o',str(app/'Contents/MacOS/QuickChat'),*sources,str(root/'QuickChatController.swift'),str(root/'main.swift')],check=True,timeout=120)
 # Quick Chat's bundle identifier, so the check uses Quick Chat's signed-in session.
-(app/'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleExecutable':'QuickChat','CFBundleIdentifier':'dev.shuaibird.quickchat','CFBundleName':'Quick Chat Live Check','CFBundlePackageType':'APPL','LSUIElement':True}))
+(app/'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleExecutable':'QuickChat','CFBundleIdentifier':'dev.shuaibird.quickchat','CFBundleName':'Quick Chat Live Check','CFBundlePackageType':'APPL','LSUIElement':True,'NSMicrophoneUsageDescription':'Quick Chat uses the microphone for ChatGPT voice input.'}))
 subprocess.run(['codesign','--force','--sign','-',str(app)],check=True)
 result=subprocess.run([str(app/'Contents/MacOS/QuickChat')],timeout=180)
 raise SystemExit(result.returncode)

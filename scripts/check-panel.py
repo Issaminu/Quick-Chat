@@ -239,7 +239,7 @@ app=root/'QuickChatPanelCheck.app'
 (app/'Contents/MacOS').mkdir(parents=True)
 sources=[str(p) for p in sorted((repo/'Sources/QuickChat').rglob('*.swift')) if p.name not in ('main.swift','QuickChatController.swift')]
 subprocess.run(['swiftc','-swift-version','6','-warnings-as-errors','-o',str(app/'Contents/MacOS/Check'),*sources,str(root/'QuickChatController.swift'),str(root/'main.swift')],check=True,timeout=120)
-(app/'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleExecutable':'Check','CFBundleIdentifier':'local.quickchat.panelcheck','CFBundleName':'Quick Chat Panel Check','CFBundlePackageType':'APPL','LSUIElement':True}))
+(app/'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleExecutable':'Check','CFBundleIdentifier':'local.quickchat.panelcheck','CFBundleName':'Quick Chat Panel Check','CFBundlePackageType':'APPL','LSUIElement':True,'NSMicrophoneUsageDescription':'Quick Chat uses the microphone for ChatGPT voice input.'}))
 subprocess.run(['codesign','--force','--sign','-',str(app)],check=True)
 print('Check directory: '+str(root),flush=True)
 result=subprocess.run([str(app/'Contents/MacOS/Check')],timeout=60)
