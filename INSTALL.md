@@ -5,14 +5,14 @@ install Quick Chat. If you're a person, the [README](README.md#install) has the 
 
 To use it, tell your assistant:
 
-> Read https://github.com/shuaibird/Quick-Chat/blob/main/INSTALL.md and help me install Quick Chat.
+> Read https://github.com/Issaminu/Quick-Chat/blob/main/INSTALL.md and help me install Quick Chat.
 
 ---
 
 ## For the assistant
 
 Quick Chat is a macOS menu-bar app (no Dock icon) that shows chatgpt.com in a floating panel
-on ⌥Space. Repository: `https://github.com/shuaibird/Quick-Chat`. Bundle id:
+on ⌥Space. Repository: `https://github.com/Issaminu/Quick-Chat`. Bundle id:
 `dev.shuaibird.quickchat`. App name on disk: `Quick Chat.app`.
 
 ### Ground rules
@@ -54,7 +54,7 @@ Ask the user which they want, and recommend the first unless they say otherwise:
 
 ```sh
 mkdir -p ~/Downloads/quick-chat && cd ~/Downloads/quick-chat
-api=https://api.github.com/repos/shuaibird/Quick-Chat/releases/latest
+api=https://api.github.com/repos/Issaminu/Quick-Chat/releases/latest
 for url in $(curl -fsSL "$api" | grep -oE '"browser_download_url": *"[^"]+\.zip(\.sha256)?"' | grep -oE 'https://[^"]+'); do
   curl -fLO "$url"
 done
@@ -63,7 +63,7 @@ ls
 
 You should see `Quick-Chat-<version>.zip` and `Quick-Chat-<version>.zip.sha256`. If the API is
 rate-limited or unreachable, have the user download both files by hand from
-`https://github.com/shuaibird/Quick-Chat/releases/latest`.
+`https://github.com/Issaminu/Quick-Chat/releases/latest`. If the repository has no release yet, use Path B.
 
 **R2. Verify the checksum:**
 
@@ -131,7 +131,7 @@ swift --version   # needs Swift 6.0 or later
 **B2. Clone and build:**
 
 ```sh
-git clone https://github.com/shuaibird/Quick-Chat.git
+git clone https://github.com/Issaminu/Quick-Chat.git
 cd Quick-Chat
 make
 ```
@@ -167,8 +167,9 @@ Tell the user:
 1. Quick Chat appears **only in the menu bar** (a speech bubble with sparkles). There's no
    Dock icon or window yet. If the menu bar is crowded, the icon may be hidden behind the
    notch; quitting another menu-bar app or using a menu-bar manager reveals it.
-2. Click the icon and turn on **Quick Chat**. Both features start off.
-3. Press **⌥Space**. A small panel opens with chatgpt.com. Sign in once inside it. Email,
+2. Click the icon and check that **Quick Chat** is on. It turns on by itself at launch;
+   **Disable Show Mini Shortcut** starts off.
+3. Press **⌥Space**. A small panel opens with chatgpt.com, at the bottom center of the screen. Sign in once inside it. Email,
    Apple or Microsoft sign-in are the most reliable; Google sign-in works today but Google may
    block embedded browsers at any time.
 4. Press ⌥Space, Esc or ⌘W to hide it. **Change Shortcut…** in the menu picks another key.
@@ -198,5 +199,5 @@ choose Quick Chat.
 | Want to remove it | Quit from the menu (this restores ChatGPT's shortcut), then delete `/Applications/Quick Chat.app` (or `make uninstall` in a clone). To also clear settings: `defaults delete dev.shuaibird.quickchat` and `rm -rf ~/Library/Application\ Support/ChatGPTCompanion`. |
 
 For anything else, point the user to the
-[issue tracker](https://github.com/shuaibird/Quick-Chat/issues) with the macOS version, the
+[issue tracker](https://github.com/Issaminu/Quick-Chat/issues) with the macOS version, the
 install path they used, and the exact error.
