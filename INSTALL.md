@@ -22,7 +22,11 @@ on ⌥Space. Repository: `https://github.com/Issaminu/Quick-Chat`. Bundle id:
 - **Never** disable Gatekeeper system-wide (`spctl --master-disable`, `--global-disable`) and
   never use `sudo`. Neither is needed: an app that is built on the user's Mac is not
   quarantined, so Gatekeeper does not block it.
-- There is no prebuilt download for this repository. Always build from source.
+- Build from source, as this guide says. The repository also has a prebuilt download on its
+  Releases page, but that app is not notarized, so macOS blocks it until the user allows it in
+  System Settings. A build on the user's Mac avoids this. If the user asks for the download
+  instead, point them to the download steps in the [README](README.md#install), and do not
+  remove the quarantine attribute for them.
 - Don't edit `~/.codex/keybindings.json` by hand. Quick Chat manages its own entry there.
 - If a step fails, show the user the exact error and use [Troubleshooting](#troubleshooting)
   before trying anything else.

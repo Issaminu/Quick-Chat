@@ -57,13 +57,22 @@ Quick Chat works next to the new ChatGPT desktop app, and it can free ⌥Space f
 
 ## Install
 
-Quick Chat is built on your own Mac, from this source. There is no prebuilt download: macOS does not quarantine an app that you build yourself, so it opens without the "could not verify" warning, and you run only code that you can read.
+You can install Quick Chat in three ways. The first one is recommended.
 
-**With an AI assistant (recommended):** tell Claude, ChatGPT or another coding assistant:
+**1. With an AI assistant (recommended):** tell Claude, ChatGPT or another coding assistant:
 *"Read https://github.com/Issaminu/Quick-Chat/blob/main/INSTALL.md and install Quick Chat."*
-[INSTALL.md](INSTALL.md) gives the assistant step-by-step instructions: it checks your Mac, builds the app, installs it, and helps with the first run.
+[INSTALL.md](INSTALL.md) gives the assistant step-by-step instructions: it checks your Mac, builds the app, installs it, and helps with the first run. The app is built on your own Mac, from this source. macOS does not quarantine an app that you build yourself, so it opens without a warning, and you run only code that you can read.
 
-**By hand:** you need macOS 14 or later and Swift 6.0 or later. Xcode 16 or later is recommended. The Command Line Tools alone (`xcode-select --install`) can build for one architecture. If `swift build` fails with "Unknown error parsing property list", install Xcode.
+**2. Download the app:** get `Quick-Chat-<version>.zip` from the [latest release](https://github.com/Issaminu/Quick-Chat/releases/latest). It runs on Apple silicon and Intel Macs with macOS 14 or later. The app is **not signed with an Apple Developer ID and not notarized** (it is signed ad-hoc). So macOS blocks it the first time you open it:
+
+1. Unzip the file, and move `Quick Chat.app` to your Applications folder.
+2. Open the app. macOS says that it cannot verify the app. Click **Done** (not **Move to Trash**).
+3. Open **System Settings → Privacy & Security**. Below **Security**, find the message about Quick Chat, and click **Open Anyway**. Confirm with your password or Touch ID.
+4. Open the app again, and click **Open**. After this first time, the app opens normally.
+
+On macOS 14, you can also right-click the app, choose **Open**, then click **Open**. To check the download, run `shasum -a 256 -c Quick-Chat-<version>.zip.sha256` in the folder with both files. To update, download the new release and replace the app.
+
+**3. By hand, from source:** you need macOS 14 or later and Swift 6.0 or later. Xcode 16 or later is recommended. The Command Line Tools alone (`xcode-select --install`) can build for one architecture. If `swift build` fails with "Unknown error parsing property list", install Xcode.
 
 ```sh
 git clone https://github.com/Issaminu/Quick-Chat.git
@@ -163,7 +172,7 @@ The ChatGPT app writes the same "unbound" entry itself when it finds a shortcut 
 
 Quick Chat needs no Accessibility or Automation access. macOS asks for the **microphone** the first time you use voice, and for the **camera** when you take a photo or share video.
 
-Builds without an Apple Development certificate are signed ad-hoc. macOS then identifies the app by the hash of its code, so after each rebuild it can ask again. To clear old entries:
+The downloaded app, and builds without an Apple Development certificate, are signed ad-hoc. macOS then identifies the app by the hash of its code, so after each rebuild it can ask again. To clear old entries:
 
 ```sh
 tccutil reset Microphone dev.shuaibird.quickchat
@@ -217,7 +226,9 @@ Build options (environment variables for `make` or `scripts/build-app.sh`):
 
 ### Releasing
 
-This repository publishes no prebuilt app. `.github/workflows/release.yml` can build a universal, ad-hoc-signed app from a `v*` tag; it is there for a future release that is signed with an Apple Developer ID and notarized, so that it opens without a warning. To test it without a release, run it by hand (`gh workflow run release.yml -f version=0.3.0-test`); it uploads the zip as a workflow artifact.
+Push a `vMAJOR.MINOR.PATCH` tag (for example `v0.3.0`). `.github/workflows/release.yml` then builds a universal, ad-hoc-signed app, checks its signature after a zip round trip, and publishes a GitHub release with the zip and its SHA-256 checksum. A tag with a suffix (`v0.4.0-beta.1`) gives a pre-release. To test the workflow without a release, run it by hand (`gh workflow run release.yml -f version=0.3.0-test`); it uploads the zip as a workflow artifact.
+
+The app is not notarized, so the download needs the first-open steps in [Install](#install). With an Apple Developer ID, the workflow can sign and notarize the app; then it opens without a warning.
 
 ## Credits
 
