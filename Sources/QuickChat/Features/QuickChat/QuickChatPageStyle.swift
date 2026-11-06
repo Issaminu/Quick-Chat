@@ -26,24 +26,39 @@ enum QuickChatPageStyle {
                     --bg-primary: Canvas !important;
                     background-color: Canvas !important;
                 }
-                [data-testid="open-sidebar-button"], [data-testid="create-new-chat-button"],
-                [aria-label="Open sidebar"], [aria-label="Close sidebar"], [aria-label="New chat"] {
-                    background: transparent !important;
+                [data-quick-chat-header], [data-quick-chat-sidebar], [data-quick-chat-new-chat] {
+                    visibility: hidden !important;
                 }
-                [data-quick-chat-header] { visibility: hidden !important; }
-                [data-quick-chat-sidebar], [data-quick-chat-new-chat] {
-                    visibility: visible !important;
-                    position: fixed !important;
-                    top: 8px !important;
-                    width: 28px !important;
-                    height: 28px !important;
+                [data-quick-chat-mode-switcher], [data-quick-chat-disclaimer], [data-quick-chat-welcome] {
+                    display: none !important;
+                }
+                [data-quick-chat-composer-layer] { background: transparent !important; }
+                [data-quick-chat-composer-surface] {
+                    background: color-mix(in srgb, CanvasText 6%, transparent) !important;
+                    border: 1px solid color-mix(in srgb, CanvasText 12%, transparent) !important;
+                    border-radius: 16px !important;
+                    box-sizing: border-box !important;
+                    -webkit-backdrop-filter: blur(12px);
+                    backdrop-filter: blur(12px);
+                }
+                [data-quick-chat-composer-dock] {
+                    padding: 0 12px 12px !important;
                     margin: 0 !important;
-                    padding: 4px !important;
-                    background: transparent !important;
+                    width: 100% !important;
+                    max-width: none !important;
+                    box-sizing: border-box !important;
                 }
-                [data-quick-chat-sidebar] { left: 40px !important; right: auto !important; }
-                [data-quick-chat-new-chat] { right: 10px !important; left: auto !important; }
-                [data-quick-chat-mode-switcher], [data-quick-chat-disclaimer] { display: none !important; }
+                [data-quick-chat-composer-wrapper] {
+                    padding-inline: 0 !important;
+                    padding-bottom: 0 !important;
+                    margin-inline: 0 !important;
+                    margin-bottom: 0 !important;
+                    max-width: none !important;
+                }
+                [data-quick-chat-composer-dock-self] {
+                    margin: 0 12px 12px !important;
+                    width: calc(100% - 24px) !important;
+                }
                 *, *::before, *::after {
                     scrollbar-width: none !important;
                     scrollbar-gutter: auto !important;
@@ -81,6 +96,33 @@ enum QuickChatPageStyle {
                     }
                 }
             };
+            const styleComposer = () => {
+                const prompt = document.querySelector('#prompt-textarea, #mobile-composer-prompt');
+                const form = prompt?.closest('form');
+                if (!form) return;
+                let surface = form;
+                for (let element = prompt.parentElement; element && form.contains(element); element = element.parentElement) {
+                    if (parseFloat(getComputedStyle(element).borderTopLeftRadius) >= 12) surface = element;
+                }
+                for (let element = prompt.parentElement; element && form.contains(element); element = element.parentElement) {
+                    element.toggleAttribute('data-quick-chat-composer-layer', element !== surface);
+                    element.toggleAttribute('data-quick-chat-composer-surface', element === surface);
+                }
+                let dock = form.closest('#thread-bottom-container');
+                if (!dock) {
+                    dock = form;
+                    for (let parent = form.parentElement; parent && !parent.matches('main, #thread, #root, body'); parent = parent.parentElement) {
+                        if (parent.getBoundingClientRect().height > form.getBoundingClientRect().height + 80 ||
+                            parent.querySelector('article, [data-message-author-role], h1, h2')) break;
+                        dock = parent;
+                    }
+                }
+                dock.toggleAttribute('data-quick-chat-composer-dock', dock !== form);
+                dock.toggleAttribute('data-quick-chat-composer-dock-self', dock === form);
+                for (let parent = form.parentElement; parent && parent !== dock && dock.contains(parent); parent = parent.parentElement) {
+                    parent.toggleAttribute('data-quick-chat-composer-wrapper', true);
+                }
+            };
             const trimPageChrome = () => {
                 const topControl = selector => [...document.querySelectorAll(selector)].find(element => {
                     const rect = element.getBoundingClientRect();
@@ -99,15 +141,21 @@ enum QuickChatPageStyle {
                 }
                 const hasSignIn = header && [...header.querySelectorAll('button, a')]
                     .some(element => /^(log in|sign up)$/i.test(label(element)));
+                sidebar?.toggleAttribute('data-quick-chat-sidebar', true);
+                newChat?.toggleAttribute('data-quick-chat-new-chat', true);
                 if (header && !hasSignIn) {
-                    // Keep the site's handlers and layout, exposing just its two icon buttons.
+                    // Retain the site's handlers for the native buttons, and reserve the header's space.
                     header.toggleAttribute('data-quick-chat-header', true);
-                    sidebar?.toggleAttribute('data-quick-chat-sidebar', true);
-                    newChat?.toggleAttribute('data-quick-chat-new-chat', true);
                 }
                 for (const control of document.querySelectorAll('[data-testid="open-sidebar-button"], [data-testid="close-sidebar-button"], [aria-label="Open sidebar"], [aria-label="Close sidebar"]')) {
                     const rect = control.getBoundingClientRect();
                     if (rect.top < 64 && rect.bottom > 0) control.toggleAttribute('data-quick-chat-sidebar', true);
+                }
+                const hasComposer = document.querySelector('#prompt-textarea, #mobile-composer-prompt');
+                for (const heading of document.querySelectorAll('main h1, main h2, #thread h1, #thread h2')) {
+                    if (hasComposer && !heading.closest('article, [data-message-author-role], [data-message-id], .markdown, aside, [role="dialog"], [role="alert"]')) {
+                        heading.toggleAttribute('data-quick-chat-welcome', true);
+                    }
                 }
                 if (document.querySelector('[data-quick-chat-disclaimer]')) return;
                 for (const element of document.querySelectorAll('div, p, small, span')) {
@@ -129,6 +177,7 @@ enum QuickChatPageStyle {
             const refresh = () => {
                 pending = false;
                 hideModeSwitch();
+                styleComposer();
                 trimPageChrome();
                 const rectangles = [...document.querySelectorAll(controls)]
                     .filter(element => getComputedStyle(element).visibility !== 'hidden')

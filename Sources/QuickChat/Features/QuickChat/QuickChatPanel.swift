@@ -125,19 +125,37 @@ final class QuickChatController: NSObject {
             dragRegion.topAnchor.constraint(equalTo: background.topAnchor),
             dragRegion.heightAnchor.constraint(equalToConstant: 44),
         ])
-        let closeButton = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close Quick Chat")!,
-                                   target: panel, action: #selector(QuickChatPanel.cancelOperation(_:)))
-        closeButton.isBordered = false
-        closeButton.contentTintColor = .secondaryLabelColor
+        func headerButton(_ symbol: String, label: String, target: AnyObject, action: Selector) -> NSButton {
+            let button = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: label)!,
+                                  target: target, action: action)
+            button.isBordered = false
+            button.contentTintColor = .secondaryLabelColor
+            button.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+            button.toolTip = label
+            button.translatesAutoresizingMaskIntoConstraints = false
+            background.addSubview(button)
+            return button
+        }
+        let closeButton = headerButton("xmark", label: "Close Quick Chat (Esc)", target: panel,
+                                       action: #selector(QuickChatPanel.cancelOperation(_:)))
         closeButton.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
-        closeButton.toolTip = "Close Quick Chat (Esc)"
-        closeButton.translatesAutoresizingMaskIntoConstraints = false
-        background.addSubview(closeButton)
+        let sidebarButton = headerButton("sidebar.left", label: "Toggle sidebar (⇧⌘S)", target: self,
+                                         action: #selector(toggleSidebar))
+        let newChatButton = headerButton("square.and.pencil", label: "New chat (⌘N)", target: self,
+                                         action: #selector(newConversation))
         NSLayoutConstraint.activate([
             closeButton.leadingAnchor.constraint(equalTo: background.leadingAnchor, constant: 10),
             closeButton.topAnchor.constraint(equalTo: background.topAnchor, constant: 10),
             closeButton.widthAnchor.constraint(equalToConstant: 24),
             closeButton.heightAnchor.constraint(equalToConstant: 24),
+            sidebarButton.leadingAnchor.constraint(equalTo: closeButton.trailingAnchor, constant: 6),
+            sidebarButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
+            sidebarButton.widthAnchor.constraint(equalToConstant: 28),
+            sidebarButton.heightAnchor.constraint(equalToConstant: 28),
+            newChatButton.trailingAnchor.constraint(equalTo: background.trailingAnchor, constant: -10),
+            newChatButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
+            newChatButton.widthAnchor.constraint(equalToConstant: 28),
+            newChatButton.heightAnchor.constraint(equalToConstant: 28),
         ])
         panel.contentView = background
 
@@ -200,7 +218,7 @@ final class QuickChatController: NSObject {
         return webView
     }
 
-    private func newConversation() {
+    @objc private func newConversation() {
         guard let webView, let url = webView.url, url.scheme == "https",
               let host = url.host, Self.isChatGPTHost(host) else { return }
         webView.evaluateJavaScript("""
@@ -222,6 +240,27 @@ final class QuickChatController: NSObject {
                     NSSound.beep()
                 } else {
                     self?.focusComposer()
+                }
+            }
+    }
+
+    @objc private func toggleSidebar() {
+        guard let webView, let url = webView.url, url.scheme == "https",
+              let host = url.host, Self.isChatGPTHost(host) else { return }
+        webView.evaluateJavaScript("""
+            (() => {
+                const button = document.querySelector('[data-testid="close-sidebar-button"], [aria-label="Close sidebar"]')
+                    || document.querySelector('[data-testid="open-sidebar-button"], [aria-label="Open sidebar"]');
+                if (button) { button.click(); return true; }
+                return !(document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', {
+                    key: 'S', code: 'KeyS', keyCode: 83, which: 83,
+                    metaKey: true, shiftKey: true, bubbles: true, cancelable: true
+                }));
+            })();
+            """) { [weak self] result, error in
+                if error != nil || result as? Bool != true {
+                    self?.log.error("Could not invoke ChatGPT's sidebar action")
+                    NSSound.beep()
                 }
             }
     }
@@ -396,11 +435,9 @@ extension QuickChatController: WKUIDelegate, WKNavigationDelegate, WKDownloadDel
 
 final class QuickChatPanel: NSPanel {
     static let autosaveName = "MiniChat.Panel" // pre-rename name; keeps the saved frame
-    /// Default content size (also the "reset size" target): a 3:4 portrait panel. Anything under
-    /// 640 wide gets chatgpt.com's compact (mobile) layout; 420 sits between Classic's 440-wide
-    /// companion chat and `minSize` (400), so the thread reads as a narrow column without the
-    /// squat look of the new app's 470-wide window cut down to 560 tall.
-    static let defaultSize = NSSize(width: 420, height: 560)
+    /// Matches ChatGPT Classic's companion panel. Saved frames still take precedence;
+    /// Reset Window Size (⌘O) applies these dimensions to an existing panel.
+    static let defaultSize = NSSize(width: 440, height: 540)
     var onCancel: (() -> Void)?
     var onNewConversation: (() -> Void)?
     /// Local key combo that calls `resetSize()` while the panel is key (default ⌘O).
