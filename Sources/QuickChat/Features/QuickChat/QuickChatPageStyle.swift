@@ -27,6 +27,8 @@ enum QuickChatPageStyle {
         /* Transparent page surfaces show the panel's material. Only the surfaces change, not the
            shared color tokens, so menus, the sidebar, and floating buttons keep their backgrounds. */
         html, body, main[data-app-shell-main-surface] { background: transparent !important; }
+        /* In a wide window, the page docks its sidebar rail and paints the frame and the workspace. */
+        [data-app-shell-frame], [data-app-shell-workspace]::before { background-color: transparent !important; }
         :is([role="main"], [role="main"] *):has(form[data-chatgpt-composer]) { background-color: transparent !important; }
         [data-thread-scroll-footer] > [aria-hidden="true"] { display: none !important; }
 
@@ -55,6 +57,10 @@ enum QuickChatPageStyle {
             pointer-events: none !important;
         }
         :is([role="main"] *):has([data-home-feed-composer]) ~ *, [data-home-feed-composer] ~ * { display: none !important; }
+        /* In a wide window, the page centers the composer in a grid of three rows (space,
+           composer, space). The space goes above it instead, so the composer stays at the bottom.
+           Elements that are not grids ignore this. */
+        :is([role="main"] *):has([data-home-feed-composer]) { grid-template-rows: 1fr auto 0px !important; }
         /* Conversation: the disclaimer below the messages (between the messages and the page's
            bottom spacer) takes no space. A block there with a control in it stays. */
         [data-app-action-timeline-scroll] { --thread-composer-disclaimer-visibility: hidden !important; }

@@ -97,9 +97,28 @@ enum Check {
             print("FAIL the signed-in ChatGPT page did not load; sign in to Quick Chat first")
             exit(1)
         }
+        // The checks use the default size; the saved frame is put back at the end.
+        let savedFrame=panel.frame
+        panel.setFrame(NSRect(origin:savedFrame.origin,size:QuickChatPanel.defaultSize),display:true)
         try? await Task.sleep(for:.seconds(1))
         await checkLayout(web,"empty chat",empty:true)
         check(visible(buttons)==["close","temporary"],"empty chat: panel shows Close and Temporary Chat",await js(web,"return [document.elementFromPoint(innerWidth - 26, 26), document.elementFromPoint(innerWidth - 70, 26)].map(e => e?.outerHTML.slice(0, 160)).join(' | ') + ' active:' + !!document.querySelector('[data-app-shell-active-page=\"true\"] form[data-chatgpt-composer]')") as Any)
+        // A wide window: the page centers its content and docks the sidebar rail. The panel's
+        // own frame is put back afterwards, as this check uses Quick Chat's saved settings.
+        let frame=panel.frame
+        panel.setFrame(NSRect(x:frame.minX,y:frame.minY,width:700,height:780),display:true)
+        try? await Task.sleep(for:.seconds(1.5))
+        let wide=await js(web,"""
+            const rendered = selector => [...document.querySelectorAll(selector)].find(e => e.getClientRects().length);
+            const body = rendered('[data-composer-body]').getBoundingClientRect();
+            const alpha = color => { const c = document.createElement('canvas').getContext('2d'); c.fillStyle = color; c.fillRect(0, 0, 1, 1); return c.getImageData(0, 0, 1, 1).data[3]; };
+            const painted = [...document.querySelectorAll('body *')].filter(e => { const r = e.getBoundingClientRect(); return r.width > innerWidth / 2 && r.height > innerHeight / 2; })
+                .flatMap(e => [getComputedStyle(e), getComputedStyle(e, '::before')]).filter(s => alpha(s.backgroundColor) === 255).length;
+            return [Math.round(innerHeight - body.bottom), painted];
+            """) as? [Int]
+        panel.setFrame(frame,display:true)
+        check(wide?[0]==8,"wide empty chat: composer stays at the bottom",wide as Any)
+        check(wide?[1]==0,"wide empty chat: page background stays transparent",wide as Any)
 
         buttons.temporaryChat.performClick(nil)
         await wait(10) { QuickChatLocation(web.url).isTemporary }
@@ -141,6 +160,8 @@ enum Check {
         } else {
             print("SKIP conversation checks: no conversation in the sidebar", await js(web,"return [document.querySelectorAll('a[href*=\"/c/\"]').length, [...document.querySelectorAll('[aria-controls]')].map(e => e.getAttribute('aria-expanded')).join(), location.href]") as Any)
         }
+        panel.setFrame(savedFrame,display:true)
+        panel.saveFrame(usingName:QuickChatPanel.autosaveName)
         controller.tearDown()
         print("\(failures) failed checks")
         fflush(nil)
