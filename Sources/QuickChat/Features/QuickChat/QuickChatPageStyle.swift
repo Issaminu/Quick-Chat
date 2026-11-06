@@ -218,14 +218,31 @@ enum QuickChatPageStyle {
             const controls = 'a, button, input, textarea, select, label, summary, [contenteditable="true"], [role="button"], [role="link"], [role="menuitem"], [role="option"], [role="tab"], [role="switch"], [role="slider"]';
             const titleBarBottom = () => document.querySelector("header")?.getBoundingClientRect().bottom || 52;
 
-            // A press on empty title bar space (not a control, not an overlay such as the sidebar or
-            // a dialog) moves the window; a double press zooms it, like a native title bar.
+            // A press on the panel's background moves the window, like ChatGPT's own companion
+            // window: on empty title bar space, and on empty space in the page (between and beside
+            // messages, in the composer around its field, in the sidebar). Controls, text, the
+            // messages and answers, media, code blocks and scroll bars keep the press, and so do
+            // overlays such as menus and dialogs. A double press on the title bar zooms the window,
+            // like a native title bar.
+            const content = '[data-user-message-bubble], [data-markdown-text-style], [data-dil-response], pre, table, img, picture, video, canvas, svg, iframe, math';
+            const hasOwnText = element => [...element.childNodes].some(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
+            const onScrollBar = (element, x, y) => {
+                const r = element.getBoundingClientRect();
+                return (element.scrollHeight > element.clientHeight && x >= r.left + element.clientLeft + element.clientWidth) ||
+                    (element.scrollWidth > element.clientWidth && y >= r.top + element.clientTop + element.clientHeight);
+            };
+            const editing = () => !!document.activeElement?.closest?.('[contenteditable="true"], input, textarea');
             document.addEventListener("mousedown", event => {
-                if (event.button !== 0 || event.clientY >= titleBarBottom()) return;
+                if (event.button !== 0 || event.ctrlKey) return;
                 const target = event.target instanceof Element ? event.target : null;
-                if (!target || target.closest(controls) || !target.closest("main, header")) return;
+                if (!target || target.closest(controls) || !target.closest("main, header, nav")) return;
+                const inTitleBar = event.clientY < titleBarBottom();
+                if (!inTitleBar && (target.closest(content) || hasOwnText(target) || onScrollBar(target, event.clientX, event.clientY))) return;
+                // No text selection starts, and the composer keeps the focus. A press on the
+                // background still ends a selection in the messages, as a press on text does.
                 event.preventDefault();
-                post({ type: event.detail === 2 ? "zoom" : "drag" });
+                if (!inTitleBar && !editing()) getSelection()?.removeAllRanges();
+                post({ type: inTitleBar && event.detail === 2 ? "zoom" : "drag" });
             }, true);
 
             // The composer keeps the text cursor in view: after typing, a paste or a cursor move,

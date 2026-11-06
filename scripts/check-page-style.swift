@@ -214,6 +214,46 @@ enum PageStyleCheck {
             if !maskCases[name]! { failures += 1 }
         }
 
+        // A press on the background moves the panel; a press on content or a control does not.
+        _ = try await web.evaluateJavaScript("show('conversation')")
+        try await Task.sleep(for: .milliseconds(200))
+        let presses = try await web.callAsyncJavaScript("""
+            const posts = [];
+            window.webkit = { messageHandlers: { quickChat: { postMessage: m => { if (m.type !== 'state') posts.push(m.type); } } } };
+            document.querySelector('#messages').insertAdjacentHTML('afterbegin',
+                '<div id="user-row"><div data-user-message-bubble id="bubble">Question</div></div>' +
+                '<div data-dil-response id="answer"><p id="answer-text">Answer</p></div>');
+            const press = (element, detail = 1, y = 300) => {
+                posts.length = 0;
+                element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, detail, clientX: 10, clientY: y }));
+                return posts.join(',') || 'none';
+            };
+            const $ = s => document.querySelector(s);
+            const composer = [...document.querySelectorAll('[data-composer-body]')].find(e => e.checkVisibility());
+            const range = document.createRange(); range.selectNodeContents($('#answer-text')); getSelection().addRange(range);
+            const result = {
+                'beside your message': press($('#user-row')) === 'drag',
+                'between messages': press($('#messages')) === 'drag',
+                'in the composer around its field': press(composer) === 'drag',
+                'on the title bar': press($('header'), 1, 20) === 'drag',
+                'double press on the title bar zooms': press($('header'), 2, 20) === 'zoom',
+                'double press on the background only drags': press($('#user-row'), 2) === 'drag',
+                'not on your message': press($('#bubble')) === 'none',
+                'not on an answer, also beside its text': press($('#answer')) === 'none' && press($('#answer-text')) === 'none',
+                'not on message text': press($('#messages p:last-child')) === 'none',
+                'not on the composer field or a button': press(composer.querySelector('[contenteditable]')) === 'none' && press(composer.querySelector('.send')) === 'none',
+                'not on a menu outside the page': press($('[role="menu"]')) === 'none'
+            };
+            press($('#user-row'));
+            result['a press on the background ends a text selection'] = getSelection().toString() === '';
+            delete window.webkit;
+            return result;
+            """, arguments: [:], in: nil, contentWorld: .page) as! [String: Bool]
+        for name in presses.keys.sorted() {
+            print("\(presses[name]! ? "PASS" : "FAIL") a press moves the panel: \(name)")
+            if !presses[name]! { failures += 1 }
+        }
+
         // Light mode: the primary button turns black with a white icon.
         let lightButton = try await web.evaluateJavaScript("""
             (() => {
