@@ -50,7 +50,7 @@ final class HeaderButtons: NSView {
         newChat = HeaderButton(image: Self.newChatImage, label: "New Chat (⌘N)") { [weak self] in self?.onNewChat?() }
         expand = HeaderButton(image: Self.expandImage, activeImage: Self.symbol("arrow.down.right.and.arrow.up.left"),
                               label: "Expand (⌘F)") { [weak self] in self?.onExpand?() }
-        close = HeaderButton(image: Self.symbol("xmark.circle"), label: "Close Quick Chat (Esc)") { [weak self] in self?.onClose?() }
+        close = HeaderButton(image: Self.closeImage, label: "Close Quick Chat (Esc)") { [weak self] in self?.onClose?() }
         for (stack, buttons) in [(leadingButtons, [sidebar!, temporaryChat!, newChat!]), (trailingButtons, [expand!, close!])] {
             stack.orientation = .horizontal
             stack.spacing = 8
@@ -117,12 +117,23 @@ final class HeaderButtons: NSView {
         path.stroke()
     }
 
+    /// A circle with an "x", drawn at the same size as the other title bar icons (16 points).
+    private static let closeImage = templateImage {
+        stroke(NSBezierPath(ovalIn: NSRect(x: 2.75, y: 2.75, width: 14.5, height: 14.5)))
+        let cross = NSBezierPath()
+        cross.move(to: NSPoint(x: 7.75, y: 7.75))
+        cross.line(to: NSPoint(x: 12.25, y: 12.25))
+        cross.move(to: NSPoint(x: 12.25, y: 7.75))
+        cross.line(to: NSPoint(x: 7.75, y: 12.25))
+        stroke(cross)
+    }
+
     /// A rounded rectangle with a short bar on its left, like the page's sidebar icon.
     private static let sidebarImage = templateImage {
-        stroke(NSBezierPath(roundedRect: NSRect(x: 2.75, y: 3.75, width: 14.5, height: 12.5), xRadius: 3.5, yRadius: 3.5))
+        stroke(NSBezierPath(roundedRect: NSRect(x: 2.75, y: 3.25, width: 14.5, height: 13.5), xRadius: 3.5, yRadius: 3.5))
         let bar = NSBezierPath()
-        bar.move(to: NSPoint(x: 7, y: 7.25))
-        bar.line(to: NSPoint(x: 7, y: 12.75))
+        bar.move(to: NSPoint(x: 7, y: 7))
+        bar.line(to: NSPoint(x: 7, y: 13))
         stroke(bar)
     }
 
@@ -200,7 +211,7 @@ final class HeaderButtons: NSView {
     }
 }
 
-/// A borderless icon button like the page's title bar buttons: 36 pt, 8 pt corners, a light
+/// A borderless icon button like the page's title bar buttons: 36 pt, a light
 /// fill on hover. While active (an "on" state, such as a temporary chat), it shows its other
 /// image (such as a filled icon) and a brighter tint. `showsOtherImage` switches only the image
 /// (such as Expand and Shrink).
@@ -226,7 +237,11 @@ final class HeaderButton: NSButton {
         target = self
         action = #selector(press)
         wantsLayer = true
-        layer?.cornerRadius = 8
+        // The corner buttons sit 8 points from the window's 20-point corners. A radius of
+        // 20 - 8 = 12 makes their corners concentric with the window's corners. All buttons
+        // use this radius, so they look the same.
+        layer?.cornerRadius = CGFloat(QuickChatPageStyle.windowCornerRadius - QuickChatPageStyle.composerInset)
+        layer?.cornerCurve = .continuous
         translatesAutoresizingMaskIntoConstraints = false
         let size = CGFloat(QuickChatPageStyle.titleBarButtonSize)
         NSLayoutConstraint.activate([widthAnchor.constraint(equalToConstant: size), heightAnchor.constraint(equalToConstant: size)])
