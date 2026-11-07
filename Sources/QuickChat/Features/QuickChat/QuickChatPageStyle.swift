@@ -94,11 +94,13 @@ enum QuickChatPageStyle {
            data-quick-chat-pointer). It shows at once. It hides with a fade, together with the
            panel's buttons (same duration and curve): other pages' title bars fade with it, and
            messages fade in under it. The transition of the new state applies, so only the hide
-           has one. */
-        @property --quick-chat-title-bar-shown { syntax: "<number>"; inherits: true; initial-value: 1; }
-        html[data-quick-chat-pointer="outside"] {
+           has one. The value is set only on the elements that use it, and it does not inherit: a
+           value on the root makes the page compute the style of each element again, which takes
+           a busy page about 70 ms. */
+        @property --quick-chat-title-bar-shown { syntax: "<number>"; inherits: false; initial-value: 1; }
+        html[data-quick-chat-pointer="outside"] :is(header[data-app-shell-titlebar], [data-app-action-timeline-scroll] > :first-child) {
             --quick-chat-title-bar-shown: 0;
-            transition: --quick-chat-title-bar-shown 0.2s ease-in-out;
+            transition: --quick-chat-title-bar-shown 0.2s ease-in-out !important;
         }
         header[data-app-shell-titlebar] { opacity: var(--quick-chat-title-bar-shown) !important; }
         /* The panel draws its own sidebar button, so that one fade shows and hides every button

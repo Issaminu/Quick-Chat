@@ -35,7 +35,7 @@ final class QuickChatController: NSObject {
     private var hideTitleBar: Task<Void, Never>?
     /// Counts the title bar changes, so only the newest change starts its fade.
     private var titleBarChange = 0
-    private var titleBarFadeStarted = 0
+    private var titleBarChangeDone = 0
     private var urlObservation: NSKeyValueObservation?
     private var systemAppearanceObservation: NSKeyValueObservation?
     /// The page's theme, from its last state message.
@@ -402,35 +402,34 @@ final class QuickChatController: NSObject {
 
     /// All the title bar buttons are the panel's own, so one change shows or hides all of them.
     /// The title bar shows at once, without a fade. It hides with a fade, and the page fades its
-    /// title bar band and the messages under it with the same duration and curve. The page's fade
-    /// starts when the page gets the new state, so the buttons' fade starts then too. A busy page
+    /// title bar band and the messages under it with the same duration and curve. The page draws
+    /// in its own process and can skip frames while it is busy, so the buttons change when the
+    /// page has drawn its new state: then the buttons and the band change together. A busy page
     /// can take longer; the buttons then wait at most 0.15 seconds.
     private func showTitleBar(_ shown: Bool) {
         guard shown != isTitleBarShown else { return }
         isTitleBarShown = shown
         titleBarChange += 1
         let change = titleBarChange
-        if shown {
-            // This also stops a hide fade that is in progress.
-            titleBarFadeStarted = change
+        applyPointerState { [weak self] in self?.changeTitleBar(change) }
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            self?.changeTitleBar(change)
+        }
+    }
+
+    private func changeTitleBar(_ change: Int) {
+        guard change == titleBarChange, change != titleBarChangeDone else { return }
+        titleBarChangeDone = change
+        guard !isTitleBarShown else {
+            // No animation. This also stops a hide fade that is in progress.
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             headerButtons?.layer?.removeAnimation(forKey: "opacity")
             headerButtons?.alphaValue = 1
             CATransaction.commit()
-            applyPointerState()
             return
         }
-        applyPointerState { [weak self] in self?.fadeTitleBar(change) }
-        Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(150))
-            self?.fadeTitleBar(change)
-        }
-    }
-
-    private func fadeTitleBar(_ change: Int) {
-        guard change == titleBarChange, change != titleBarFadeStarted else { return }
-        titleBarFadeStarted = change
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.2
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -438,11 +437,14 @@ final class QuickChatController: NSObject {
         }
     }
 
-    /// `applied` runs when the page has the new state (or could not get it).
+    /// `applied` runs when the page has drawn the new state (or could not get it).
     private func applyPointerState(applied: (@MainActor () -> Void)? = nil) {
-        let value = isTitleBarShown ? "inside" : "outside"
         guard let webView else { applied?(); return }
-        webView.evaluateJavaScript("document.documentElement.dataset.quickChatPointer = '\(value)'") { _, _ in applied?() }
+        // requestAnimationFrame runs just before the page draws; the timer runs after it drew.
+        webView.callAsyncJavaScript("""
+            document.documentElement.dataset.quickChatPointer = value;
+            await new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve)));
+            """, arguments: ["value": isTitleBarShown ? "inside" : "outside"], in: nil, in: .page) { _ in applied?() }
     }
 
     /// The panel's material and buttons match the page's theme. When the page follows the system

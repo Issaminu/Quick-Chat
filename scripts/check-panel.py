@@ -151,13 +151,19 @@ enum Check {
         await wait { buttons.alphaValue == 0 }
         let pointerOutside=(await js(web,"document.documentElement.dataset.quickChatPointer")) as? String
         check(buttons.alphaValue == 0 && pointerOutside == "outside","the title bar hides while the pointer is outside the panel")
+        // The page notes the time when it gets the new state; the check notes when the buttons show.
+        _=await js(web,"new MutationObserver(() => { window.pointerChangedAt = performance.now() }).observe(document.documentElement, {attributes: true, attributeFilter: ['data-quick-chat-pointer']})")
         controller.setPointerInside(true)
         let opacity={ CGFloat(buttons.layer?.presentation()?.opacity ?? buttons.layer?.opacity ?? -1) }
-        check(buttons.alphaValue == 1 && (buttons.layer?.animationKeys() ?? []).isEmpty,"the title bar shows at once, without a fade, when the pointer comes back",buttons.layer?.animationKeys() ?? [])
+        let started=Date()
+        while buttons.alphaValue != 1 && Date().timeIntervalSince(started) < 1 { try? await Task.sleep(for:.milliseconds(2)) }
+        let shownAfter=Date().timeIntervalSince(started)
+        check(buttons.alphaValue == 1 && (buttons.layer?.animationKeys() ?? []).isEmpty && shownAfter < 0.16,"the title bar shows without a fade when the pointer comes back",[shownAfter])
+        let pointerInside=(await js(web,"document.documentElement.dataset.quickChatPointer")) as? String
+        let pageFirst=(await js(web,"typeof window.pointerChangedAt === 'number'")) as? Bool == true
+        check(pointerInside == "inside" && pageFirst,"the buttons show after the page has the new state, so they show with the page's band")
         try? await Task.sleep(for:.milliseconds(30))
         check(opacity() == 1,"the shown title bar is fully opaque on screen",opacity())
-        let pointerInside=(await js(web,"document.documentElement.dataset.quickChatPointer")) as? String
-        check(pointerInside == "inside","the page gets the pointer state")
         controller.setPointerInside(false,immediately:true)
         try? await Task.sleep(for:.milliseconds(80))
         let midFade=opacity()

@@ -305,7 +305,7 @@ enum PageStyleCheck {
         try await Task.sleep(for: .milliseconds(400))
         let hidden = try await web.evaluateJavaScript("""
             getComputedStyle(document.querySelector('header')).opacity === '0' &&
-            getComputedStyle(document.documentElement).getPropertyValue('--quick-chat-title-bar-shown').trim() === '0'
+            getComputedStyle(document.querySelector('header')).getPropertyValue('--quick-chat-title-bar-shown').trim() === '0'
             """) as? Bool == true
         print("\(hidden ? "PASS" : "FAIL") pointer outside the panel: the title bar is hidden and messages may use its space")
         if !hidden { failures += 1 }
@@ -313,13 +313,13 @@ enum PageStyleCheck {
             document.documentElement.dataset.quickChatPointer = 'inside';
             await new Promise(resolve => requestAnimationFrame(resolve));
             return getComputedStyle(document.querySelector('header')).opacity === '1' &&
-                getComputedStyle(document.documentElement).getPropertyValue('--quick-chat-title-bar-shown').trim() === '1';
+                getComputedStyle(document.querySelector('header')).getPropertyValue('--quick-chat-title-bar-shown').trim() === '1';
             """, arguments: [:], in: nil, contentWorld: .page) as? Bool == true
         print("\(shownAtOnce ? "PASS" : "FAIL") pointer back over the panel: the title bar shows at once, without a fade")
         if !shownAtOnce { failures += 1 }
         _ = try await web.evaluateJavaScript("document.documentElement.dataset.quickChatPointer = 'outside'")
         try await Task.sleep(for: .milliseconds(60))
-        let fadesOut = try await web.evaluateJavaScript("(v => v > 0 && v < 1)(+getComputedStyle(document.documentElement).getPropertyValue('--quick-chat-title-bar-shown'))") as? Bool == true
+        let fadesOut = try await web.evaluateJavaScript("(v => v > 0 && v < 1)(+getComputedStyle(document.querySelector('header')).getPropertyValue('--quick-chat-title-bar-shown'))") as? Bool == true
         print("\(fadesOut ? "PASS" : "FAIL") pointer outside the panel again: the title bar fades out")
         if !fadesOut { failures += 1 }
         try await Task.sleep(for: .milliseconds(300))
