@@ -149,7 +149,11 @@ Quick Chat changes how chatgpt.com looks inside the panel. It changes only the l
 - **The cursor stays in view.** In a long draft, the composer scrolls with the text cursor while you type, paste or move the cursor.
 - **No jumps when the size changes.** During Expand or Shrink, a cover with the panel's material fades in, the window changes its size, and the cover fades out when the page is drawn at the new size.
 
-The style uses only ChatGPT's own semantic attributes (`data-app-shell-*`, `data-composer-*`, `data-thread-*`) and design tokens, never text or generated class names. When ChatGPT changes its page, a part of the style that loses its hook falls back to ChatGPT's own look. The page does not break.
+The style uses only ChatGPT's own semantic attributes (`data-app-shell-*`, `data-composer-*`, `data-thread-*`) and design tokens, never text or generated class names. When ChatGPT changes its page, a part of the style that loses its hook falls back to ChatGPT's own look. Three more guards keep the panel usable:
+
+- **Safe mode.** A moment after a page loads, the page script checks if the style hides the composer or most of a conversation's text. If it does, the style turns itself off for that page: the panel shows ChatGPT's own page, which still works, without the panel's buttons over it. The menu bar menu then says so.
+- **One list of page hooks.** `PageHooks.swift` lists every attribute, CSS variable, control, shortcut and storage key of chatgpt.com that Quick Chat uses, with what it is for and what users see if it breaks. A check fails when the style uses a hook that the list does not name.
+- **A daily page check.** Every day, GitHub Actions checks each hook on the live chatgpt.com with a test account, and opens an issue when ChatGPT changes its page (see [The daily page check](#the-daily-page-check)).
 
 ## Free ⌥Space from ChatGPT's Mini
 
@@ -202,18 +206,42 @@ The checks run on macOS:
 
 ```sh
 python3 scripts/check-panel.py
-swiftc -swift-version 6 Sources/QuickChat/Features/QuickChat/QuickChatPageStyle.swift scripts/check-page-style.swift -o /tmp/quickchat-page-style-check
+swiftc -swift-version 6 Sources/QuickChat/Features/QuickChat/QuickChatPageStyle.swift Sources/QuickChat/Features/QuickChat/PageHooks.swift scripts/check-page-style.swift -o /tmp/quickchat-page-style-check
 /tmp/quickchat-page-style-check
 ```
 
 - `check-panel.py` builds the real panel in an isolated test app with a local page that has the same hooks as chatgpt.com. It checks the buttons, the shortcuts, the title bar, the size changes and the position.
-- `check-page-style.swift` checks the style on a local page: transparency, insets, corners, the message cut and fade, the hidden toolbars and the scroll bar.
+- `check-page-style.swift` checks the style on a local page: transparency, insets, corners, the message cut and fade, the hidden toolbars and the scroll bar. It also checks safe mode, and that `PageHooks.swift` names every hook that the style uses.
 - GitHub Actions builds the app and runs `check-page-style.swift` and `check-panel.py` on each push and pull request (`.github/workflows/checks.yml`).
 - `check-live.py` checks the style on the real chatgpt.com, with your Quick Chat session. It sends no messages. Run it when ChatGPT changes its page, to see which part lost its hook. Quit Quick Chat first.
 
   ```sh
   python3 scripts/check-live.py
   ```
+
+### The daily page check
+
+Quick Chat depends on how chatgpt.com is built, and ChatGPT can change that at any time. `.github/workflows/page-check.yml` runs every day at 06:17 UTC (and on demand). It signs in with a test account, and opens the empty chat, a temporary chat, a conversation (read only, it sends nothing) and a wide panel, in the same WebKit and with the same page style as the app. On each page it runs the checks in `PageHooks.swift`: each hook exists, and the composer, the messages, the sidebar button and the message fade work.
+
+It reports on GitHub issues. Each kind of problem has one issue with its own label, and the issue closes by itself when the problem goes away:
+
+| Label | Meaning | What to do |
+| --- | --- | --- |
+| `page-change` | ChatGPT changed its page. The issue lists each broken hook, what it is for and what users see. | Update the hook in `PageHooks.swift` and `QuickChatPageStyle.swift`. The run's artifact has a screenshot of each page. |
+| `page-check-session` | The test account's session expired (after about 90 days). | Run `scripts/renew-page-check-session.sh` on a Mac and sign in with the test account. |
+| `page-check-blocked` | The site blocked the check (for example a Cloudflare challenge). | Wait a day. If it stays, the check needs another way to reach the site. |
+| `page-check-failed` | The check itself could not run. | Read the run's log. |
+
+To set it up in your own fork:
+
+1. Make a ChatGPT test account. Do not use your own account: the secret gives full access to it.
+2. Sign in with it and send one message that asks for a paragraph, a list, a table and a code block. Copy the conversation's address.
+3. In a clone, run `scripts/renew-page-check-session.sh` and sign in with the test account in its window. It stores the session as the `CHATGPT_SESSION` secret. The session never shows on screen.
+4. Run `gh variable set CHATGPT_CONVERSATION --body "<the conversation's address>"`.
+5. In a fork, turn on workflows in the Actions tab: GitHub turns off scheduled workflows in forks, and after 60 days without activity in a repository.
+6. Run the check once: `gh workflow run page-check.yml`.
+
+To run the check on your Mac with a session file: build it with the command at the top of `scripts/check-page-hooks.swift`.
 
 Build options (environment variables for `make` or `scripts/build-app.sh`):
 

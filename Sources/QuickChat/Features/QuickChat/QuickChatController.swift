@@ -30,6 +30,8 @@ final class QuickChatController: NSObject {
     private var pointerWatcher: PointerWatcher?
     /// The title bar shows while the pointer is over the panel, and for a moment after it leaves.
     private(set) var isTitleBarShown = true
+    /// Set while the page style is off for the current page (safe mode): what it hid.
+    private(set) var pageStyleOffReason: String?
     private var hideTitleBar: Task<Void, Never>?
     /// Counts the title bar changes, so only the newest change starts its fade.
     private var titleBarChange = 0
@@ -281,19 +283,7 @@ final class QuickChatController: NSObject {
     /// shortcut (⇧⌘O). Only structure is used, so it works in every language.
     private func newConversation() {
         guard let webView, QuickChatLocation(webView.url).isChatGPT else { return }
-        webView.evaluateJavaScript("""
-            (() => {
-                const page = document.querySelector('[data-app-shell-active-page="true"]') || document;
-                const button = page.querySelector('[data-app-shell-header-slot="start"] > :not([aria-hidden="true"]) button:not([aria-controls])')
-                    || page.querySelector('a[href="/"]') || document.querySelector('a[href="/"]');
-                if (button) { button.click(); return true; }
-                const event = new KeyboardEvent('keydown', {
-                    key: 'O', code: 'KeyO', keyCode: 79, which: 79,
-                    metaKey: true, shiftKey: true, bubbles: true, cancelable: true
-                });
-                return !(document.activeElement || document.body).dispatchEvent(event);
-            })();
-            """) { [weak self] result, error in
+        webView.evaluateJavaScript(QuickChatPageStyle.newChatScript) { [weak self] result, error in
                 guard let self else { return }
                 if error != nil || result as? Bool != true {
                     self.log.error("Could not invoke ChatGPT's New chat action; loading a new chat")
@@ -310,17 +300,7 @@ final class QuickChatController: NSObject {
     /// The small layout has a sidebar button in the page's title bar. The wide layout has none
     /// (its sidebar is a docked row of icons), so the page then gets its own sidebar shortcut, ⌘⇧S.
     private func toggleSidebar() {
-        // In a block: each call runs in the page's global scope, where a second top-level
-        // `const` with the same name fails.
-        webView?.evaluateJavaScript("""
-            {
-                const toggle = [...document.querySelectorAll('header[data-app-shell-titlebar] button[aria-controls]')]
-                    .find(element => element.getClientRects().length > 0);
-                if (toggle) toggle.click();
-                else for (const type of ['keydown', 'keyup']) document.dispatchEvent(new KeyboardEvent(type, { key: 'S', code: 'KeyS', keyCode: 83, metaKey: true, shiftKey: true, bubbles: true, cancelable: true }));
-                setTimeout(() => { if (document.activeElement?.matches('button, [role="button"]')) document.activeElement.blur(); }, 60);
-            }
-            """)
+        webView?.evaluateJavaScript(QuickChatPageStyle.toggleSidebarScript)
     }
 
     /// Waits until the page drew its first frame at `width`, at most 1 second: the second frame
@@ -348,15 +328,7 @@ final class QuickChatController: NSObject {
     private func toggleTemporaryChat() {
         guard let webView else { return }
         let leave = QuickChatLocation(webView.url).isTemporary
-        webView.evaluateJavaScript("""
-            (() => {
-                const button = [...document.querySelectorAll('header button:has(use[href*="chat-bubble"][href*="dashed"]), header button[aria-label*="temporary chat" i], button[data-testid="temporary-chat-button"]')]
-                    .find(element => element.getClientRects().length > 0);
-                if (!button) return false;
-                button.click();
-                return true;
-            })();
-            """) { [weak self] result, _ in
+        webView.evaluateJavaScript(QuickChatPageStyle.temporaryChatScript) { [weak self] result, _ in
                 guard let self, let webView = self.webView else { return }
                 if result as? Bool != true {
                     let address = leave ? "https://chatgpt.com/" : "https://chatgpt.com/?temporary-chat=true"
@@ -374,6 +346,11 @@ final class QuickChatController: NSObject {
             panel?.expandOrShrink()
         case "escape":
             hide(restoreFocus: true)
+        case "safeMode":
+            // The page style hid the composer or the messages, so it turned itself off for this
+            // page (ChatGPT changed its page). The daily page check reports the broken hooks.
+            pageStyleOffReason = message["reason"] as? String ?? "unknown"
+            log.error("Page style turned off: it hid the \(self.pageStyleOffReason ?? "", privacy: .public). ChatGPT changed its page.")
         case "state":
             // While the page loads, only Close shows; the page cannot use the other buttons yet.
             let ready = message["ready"] as? Bool == true
@@ -574,6 +551,7 @@ extension QuickChatController: WKUIDelegate, WKNavigationDelegate, WKDownloadDel
     /// A new ChatGPT page shows a placeholder until its HTML loads; the loading view covers it
     /// until the page reports that it is ready. Other pages (such as sign-in) show as they load.
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        pageStyleOffReason = nil // a new page starts with the style on
         applyPointerState()
         if QuickChatLocation(webView.url).isChatGPT { loadingView?.start() } else { loadingView?.stop() }
     }

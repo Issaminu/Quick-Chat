@@ -9,6 +9,10 @@ import AppKit
 final class QuickChatFeature: Feature {
     let id = "miniChat" // pre-rename id; persisted, keep
     var title: String { "Quick Chat" }
+    /// Shown in the menu while the panel shows ChatGPT without its style (safe mode).
+    var statusText: String? {
+        isEnabled && chat.pageStyleOffReason != nil ? "ChatGPT changed its page: shown without the panel style" : nil
+    }
     private(set) var isEnabled = false
 
     private let log = Log.make("QuickChat")

@@ -1,0 +1,94 @@
+name: Page check
+
+# Every day, checks that the live chatgpt.com still has every page hook that Quick Chat uses
+# (Sources/QuickChat/Features/QuickChat/PageHooks.swift). It signs in with a test account,
+# opens the empty chat, a temporary chat, a conversation (read only) and a wide panel in the
+# same WebKit and with the same page style as the app, and reports problems as GitHub issues
+# (scripts/report-page-check.sh).
+#
+# Setup (see README, "The daily page check"):
+#   secret   CHATGPT_SESSION        the test account's cookies (scripts/renew-page-check-session.sh)
+#   variable CHATGPT_CONVERSATION   a conversation of the test account to open
+# Without the secret, the workflow does nothing.
+
+on:
+  schedule:
+    - cron: "17 6 * * *" # every day at 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: page-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: macos-26
+    timeout-minutes: 20
+    env:
+      XCODE_APP: /Applications/Xcode_26.6.app
+      HAS_SESSION: ${{ secrets.CHATGPT_SESSION != '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Skip without a session
+        if: env.HAS_SESSION != 'true'
+        run: echo "No CHATGPT_SESSION secret, so there is nothing to check. See README, \"The daily page check\"." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Select Xcode
+        if: env.HAS_SESSION == 'true'
+        run: sudo xcode-select -s "$XCODE_APP"
+
+      - name: Check the page
+        id: check
+        if: env.HAS_SESSION == 'true'
+        env:
+          CHATGPT_SESSION: ${{ secrets.CHATGPT_SESSION }}
+          CONVERSATION: ${{ vars.CHATGPT_CONVERSATION }}
+        run: |
+          umask 077
+          printf '%s' "$CHATGPT_SESSION" > "$RUNNER_TEMP/session.json"
+          swiftc -swift-version 6 -parse-as-library \
+            Sources/QuickChat/Features/QuickChat/QuickChatPageStyle.swift \
+            Sources/QuickChat/Features/QuickChat/PageHooks.swift \
+            scripts/check-page-hooks.swift -o "$RUNNER_TEMP/check-page-hooks"
+          set +e
+          "$RUNNER_TEMP/check-page-hooks" --cookies "$RUNNER_TEMP/session.json" \
+            ${CONVERSATION:+--conversation "$CONVERSATION"} --out page-check
+          code=$?
+          set -e
+          rm -f "$RUNNER_TEMP/session.json"
+          case $code in 0) outcome=ok ;; 1) outcome=broken ;; 2) outcome=blocked ;; 3) outcome=session ;; *) outcome=failed ;; esac
+          echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
+          [ -f page-check/report.md ] && cat page-check/report.md >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Keep the screenshots
+        if: always() && env.HAS_SESSION == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: page-check
+          path: page-check/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Report on GitHub issues
+        if: always() && env.HAS_SESSION == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          OUTCOME: ${{ steps.check.outputs.outcome || 'failed' }}
+          REPORT: page-check/report.md
+          RESULT: page-check/result.json
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [ -f "$REPORT" ] || { mkdir -p page-check; echo "The page check could not run. See the run's log." > "$REPORT"; }
+          bash scripts/report-page-check.sh
+
+      - name: Fail the run unless all hooks work
+        if: env.HAS_SESSION == 'true' && steps.check.outputs.outcome != 'ok'
+        run: |
+          echo "::error::Page check: ${{ steps.check.outputs.outcome || 'failed' }}"
+          exit 1

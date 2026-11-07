@@ -17,6 +17,51 @@ enum QuickChatPageStyle {
             .find(element => element.getClientRects().length > 0)?.focus()
         """
 
+    /// The panel's buttons press the page's own controls. Each script runs in its own function
+    /// scope: every call runs in the page's global scope, where a second top-level `const` with
+    /// the same name fails. The daily page check (scripts/check-page-hooks.swift) runs them too.
+    ///
+    /// New Chat (⌘N): the page's New chat button (next to its sidebar button), else its Home
+    /// link, else ChatGPT's own shortcut (⇧⌘O). True when the page took the action.
+    static let newChatScript = """
+        (() => {
+            const page = document.querySelector('[data-app-shell-active-page="true"]') || document;
+            const button = page.querySelector('[data-app-shell-header-slot="start"] > :not([aria-hidden="true"]) button:not([aria-controls])')
+                || page.querySelector('a[href="/"]') || document.querySelector('a[href="/"]');
+            if (button) { button.click(); return true; }
+            const event = new KeyboardEvent('keydown', {
+                key: 'O', code: 'KeyO', keyCode: 79, which: 79,
+                metaKey: true, shiftKey: true, bubbles: true, cancelable: true
+            });
+            return !(document.activeElement || document.body).dispatchEvent(event);
+        })();
+        """
+    /// Sidebar (⌘B): the small layout has a sidebar button in the page's title bar. The wide
+    /// layout has none (its sidebar is a docked row of icons), so the page then gets its own
+    /// sidebar shortcut, ⌘⇧S.
+    static let toggleSidebarScript = """
+        (() => {
+            const toggle = [...document.querySelectorAll('header[data-app-shell-titlebar] button[aria-controls]')]
+                .find(element => element.getClientRects().length > 0);
+            if (toggle) toggle.click();
+            else for (const type of ['keydown', 'keyup']) document.dispatchEvent(new KeyboardEvent(type, { key: 'S', code: 'KeyS', keyCode: 83, metaKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+            setTimeout(() => { if (document.activeElement?.matches('button, [role="button"]')) document.activeElement.blur(); }, 60);
+            return !!toggle;
+        })();
+        """
+    /// Temporary Chat: the page's temporary chat button, found by its icon or its label. False
+    /// when the page has none (the panel then loads the temporary chat address).
+    static let temporaryChatScript = """
+        (() => {
+            const button = [...document.querySelectorAll(\(temporaryChatButtons))]
+                .find(element => element.getClientRects().length > 0);
+            if (!button) return false;
+            button.click();
+            return true;
+        })();
+        """
+    static let temporaryChatButtons = #"'header button:has(use[href*="chat-bubble"][href*="dashed"]), header button[aria-label*="temporary chat" i], button[data-testid="temporary-chat-button"]'"#
+
     static let css = #"""
         :root {
             --quick-chat-inset: \#(composerInset)px;
@@ -230,7 +275,7 @@ enum QuickChatPageStyle {
             // messages and answers, media, code blocks and scroll bars keep the press, and so do
             // overlays such as menus and dialogs. A double press on the title bar zooms the window,
             // like a native title bar.
-            const content = '[data-user-message-bubble], [data-markdown-text-style], [data-dil-response], pre, table, img, picture, video, canvas, svg, iframe, math';
+            const content = '[data-user-message-bubble], [data-markdown-text-style], [data-dil-response], [data-client-defined-widget], pre, table, img, picture, video, canvas, svg, iframe, math';
             const hasOwnText = element => [...element.childNodes].some(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim());
             const onScrollBar = (element, x, y) => {
                 const r = element.getBoundingClientRect();
@@ -296,6 +341,42 @@ enum QuickChatPageStyle {
 
             // Focus rings: on with Tab, off with the next press of the mouse or the trackpad.
             const root = document.documentElement;
+
+            // Safe mode. ChatGPT changes its page from time to time, and this style keys on the
+            // page's structure. If the style hides the composer, or most of a conversation's text,
+            // it turns itself off for this page: the page then shows ChatGPT's own look, which
+            // still works, and the panel shows none of its own buttons over it. The test turns the
+            // style off and on again in one task, so nothing is drawn in between. It runs a moment
+            // after the page loads and after each move to another page.
+            let safeMode = null;
+            const editorShows = () => [...document.querySelectorAll('form [contenteditable="true"], form textarea')]
+                .some(e => e.checkVisibility({ opacityProperty: true, visibilityProperty: true }) && e.getBoundingClientRect().width > 8);
+            const conversationText = () => location.pathname.startsWith("/c/") ? (document.querySelector("main")?.innerText.length ?? 0) : 0;
+            const harm = () => {
+                const styled = { editor: editorShows(), text: conversationText() };
+                style.disabled = true;
+                const plain = { editor: editorShows(), text: conversationText() };
+                style.disabled = false;
+                if (plain.editor && !styled.editor) return "composer";
+                if (plain.text > 200 && styled.text < plain.text / 2) return "messages";
+                return null;
+            };
+            const checkSafety = () => {
+                if (safeMode || document.readyState !== "complete") return;
+                const reason = harm();
+                if (!reason) return;
+                safeMode = reason;
+                style.disabled = true;
+                root.dataset.quickChatSafeMode = reason;
+                post({ type: "safeMode", reason });
+                schedule();
+            };
+            let checkedPage = "";
+            const checkSafetySoon = () => {
+                if (location.href === checkedPage) return;
+                checkedPage = location.href;
+                for (const delay of [1500, 5000]) setTimeout(checkSafety, delay);
+            };
             window.addEventListener("keydown", event => { if (event.key === "Tab") root.dataset.quickChatKeyboard = ""; }, true);
             window.addEventListener("pointerdown", () => { delete root.dataset.quickChatKeyboard; }, true);
 
@@ -353,7 +434,9 @@ enum QuickChatPageStyle {
                 if (rendered) { scroller = rendered; alignMask(rendered); }
                 // Until the page's own style loads, it has no color scheme; the panel then keeps its theme.
                 const scheme = getComputedStyle(document.documentElement).colorScheme;
-                const titleBar = !!document.querySelector("header[data-app-shell-titlebar]");
+                // In safe mode the page shows its own title bar, without the panel's buttons.
+                const titleBar = !safeMode && !!document.querySelector("header[data-app-shell-titlebar]");
+                if (document.readyState === "complete") checkSafetySoon();
                 // In a wide window the page docks its sidebar (or its row of icons) on the left;
                 // the main area then starts to its right.
                 const main = [...document.querySelectorAll("main[data-app-shell-main-surface]")].find(e => e.getClientRects().length);

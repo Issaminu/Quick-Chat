@@ -1,10 +1,12 @@
 // Run from the repository root:
-// swiftc -swift-version 6 Sources/QuickChat/Features/QuickChat/QuickChatPageStyle.swift scripts/check-page-style.swift -o /tmp/quickchat-page-style-check
+// swiftc -swift-version 6 Sources/QuickChat/Features/QuickChat/QuickChatPageStyle.swift Sources/QuickChat/Features/QuickChat/PageHooks.swift scripts/check-page-style.swift -o /tmp/quickchat-page-style-check
 // /tmp/quickchat-page-style-check
 //
 // Checks the page style against a small page that has the same hooks as chatgpt.com: the
 // empty chat first, then the conversation layout that the page switches to (without loading)
-// after the first message. scripts/check-live.py checks the real page.
+// after the first message. It also checks that PageHooks names every hook of the style, and
+// that safe mode turns the style off when the style hides the composer.
+// scripts/check-page-hooks.swift checks the real page every day.
 import AppKit
 import WebKit
 
@@ -307,7 +309,53 @@ enum PageStyleCheck {
             """) as? Bool == true
         print("\(hidden ? "PASS" : "FAIL") pointer outside the panel: the title bar is hidden and messages may use its space")
         if !hidden { failures += 1 }
+        // The normal page did not start safe mode (its checks ran 1.5 and 5 seconds after load).
+        try await Task.sleep(for: .seconds(1))
+        let styleOn = try await web.evaluateJavaScript("!document.documentElement.hasAttribute('data-quick-chat-safe-mode') && document.adoptedStyleSheets.some(s => !s.disabled && [...s.cssRules].some(r => r.name === '--quick-chat-title-bar-shown'))") as? Bool == true
+        print("\(styleOn ? "PASS" : "FAIL") safe mode: the style stays on for a page that it does not harm")
+        if !styleOn { failures += 1 }
         window.orderOut(nil)
+
+        // Safe mode: a page change that puts the composer next to its wrapper (so the style hides
+        // it) turns the style off, and the composer shows again.
+        let changed = WKWebView(frame: NSRect(x: 0, y: 0, width: 440, height: 540), configuration: configuration)
+        let changedWindow = NSWindow(contentRect: changed.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        changedWindow.contentView = changed
+        changedWindow.orderFront(nil)
+        changed.loadHTMLString("""
+            <!doctype html><html><body><div data-app-shell-active-page="true"><main data-app-shell-main-surface>
+            <header data-app-shell-titlebar></header>
+            <div role="main"><div><div data-home-feed-composer></div>
+            <form data-chatgpt-composer><div data-composer-body><div contenteditable="true">Draft</div></div></form></div></div>
+            </main></div></body></html>
+            """, baseURL: URL(string: "https://chatgpt.com/"))
+        try await Task.sleep(for: .seconds(3))
+        let safe = try await changed.evaluateJavaScript("""
+            (() => {
+                const editor = document.querySelector('[contenteditable="true"]');
+                const style = document.adoptedStyleSheets.find(s => [...s.cssRules].some(r => r.name === '--quick-chat-title-bar-shown'));
+                return document.documentElement.dataset.quickChatSafeMode === 'composer' && !!style && style.disabled &&
+                    editor.checkVisibility({ opacityProperty: true, visibilityProperty: true });
+            })()
+            """) as? Bool == true
+        print("\(safe ? "PASS" : "FAIL") safe mode: the style turns itself off when it hides the composer")
+        if !safe { failures += 1 }
+        changedWindow.orderOut(nil)
+
+        // PageHooks names every data attribute and CSS variable of the page that the style and
+        // the panel's scripts use, so the daily page check covers them. Attributes that only
+        // start a new page report (data-state, data-theme) need no check.
+        let used = [QuickChatPageStyle.css, QuickChatPageStyle.script, QuickChatPageStyle.newChatScript,
+                    QuickChatPageStyle.toggleSidebarScript, QuickChatPageStyle.temporaryChatButtons,
+                    QuickChatPageStyle.focusComposerScript].joined(separator: "\n")
+        let checked = PageHooks.Page.allCases.map(PageHooks.checkScript(for:)).joined(separator: "\n")
+        let pattern = try NSRegularExpression(pattern: #"(?<![\w-])(data-[a-z0-9-]+|--[a-z][a-z0-9-]+)"#)
+        let names = Set(pattern.matches(in: used, range: NSRange(used.startIndex..., in: used)).map { String(used[Range($0.range, in: used)!]) })
+            .filter { !$0.hasPrefix("data-quick-chat") && !$0.hasPrefix("--quick-chat") && !["data-state", "data-theme"].contains($0) }
+        let missing = names.filter { !checked.contains($0) }.sorted()
+        print("\(missing.isEmpty ? "PASS" : "FAIL") PageHooks checks every page hook that the style uses\(missing.isEmpty ? "" : " (missing: \(missing.joined(separator: ", ")))")")
+        if !missing.isEmpty { failures += 1 }
+
         print("\(failures) failed checks")
         exit(failures == 0 ? 0 : 1)
     }
