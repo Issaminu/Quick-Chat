@@ -85,6 +85,9 @@ enum PageHookCheck {
         configuration.userContentController.addUserScript(WKUserScript(
             source: QuickChatPageStyle.sandboxFrameScript, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         configuration.userContentController.add(messages, name: "quickChat")
+        // The page loads several hundred files; the browser's resource list keeps 250 by default.
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: "performance.setResourceTimingBufferSize(100000);", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 440, height: 540), configuration: configuration)
         web.navigationDelegate = messages
         let window = NSWindow(contentRect: web.frame, styleMask: .borderless, backing: .buffered, defer: false)

@@ -41,12 +41,18 @@ enum PageHooks {
         const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
         const mainLeft = () => Math.round(rendered("main[data-app-shell-main-surface]")?.getBoundingClientRect().left ?? -1);
         const alpha = color => { const c = document.createElement("canvas").getContext("2d"); c.fillStyle = color; c.fillRect(0, 0, 1, 1); return c.getImageData(0, 0, 1, 1).data[3]; };
+        // The page's HTML, and every script and style sheet that it loaded or links: from the
+        // resource timing list (its buffer can be full) and from the page's own tags.
         window.__quickChatSource ??= null;
         const source = async () => {
             if (window.__quickChatSource) return window.__quickChatSource;
             let text = document.documentElement.outerHTML;
-            const urls = [...new Set(performance.getEntriesByType("resource").map(e => e.name).filter(u => /\.(js|css)(\?|$)/.test(u)))];
-            for (const url of urls) { try { text += await (await fetch(url)).text(); } catch {} }
+            const urls = new Set(performance.getEntriesByType("resource").map(e => e.name).filter(u => /\.(m?js|css)(\?|$)/.test(u)));
+            for (const e of document.querySelectorAll('script[src], link[rel~="stylesheet"][href], link[rel~="modulepreload"][href], link[rel~="preload"][href]')) urls.add(e.src || e.href);
+            for (const sheet of document.styleSheets) { try { text += [...sheet.cssRules].map(r => r.cssText).join("\n"); } catch {} }
+            let read = 0;
+            for (const url of urls) { try { const response = await fetch(url); if (response.ok) { text += await response.text(); read++; } } catch {} }
+            window.__quickChatSourceInfo = `${read} of ${urls.size} files, ${Math.round(text.length / 1024)} KB`;
             return window.__quickChatSource = text;
         };
         const uses = async name => (await source()).includes(name);
@@ -217,7 +223,8 @@ enum PageHooks {
     /// `toggleSidebar()`.
     static func checkScript(for page: Page) -> String {
         let checks = all.filter { $0.pages.contains(page) }.map { hook in
-            "try { result[\(javaScriptString(hook.id))] = !!(\(hook.check)); } catch (error) { result[\(javaScriptString(hook.id))] = false; errors[\(javaScriptString(hook.id))] = String(error); }"
+            "try { result[\(javaScriptString(hook.id))] = !!(\(hook.check)); } catch (error) { result[\(javaScriptString(hook.id))] = false; errors[\(javaScriptString(hook.id))] = String(error); }" +
+            (hook.check.contains("uses(") ? " if (!result[\(javaScriptString(hook.id))] && window.__quickChatSourceInfo) errors[\(javaScriptString(hook.id))] ??= `not in the page's source (${window.__quickChatSourceInfo})`;" : "")
         }
         return """
             const toggleSidebar = () => \(expression(QuickChatPageStyle.toggleSidebarScript));
