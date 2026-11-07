@@ -128,9 +128,9 @@ In the small panel, the title bar shows while the pointer is over the panel, and
 | Place | Button | Action |
 | --- | --- | --- |
 | Top left | Sidebar | Opens ChatGPT's sidebar with your chats and projects (same as ⌘B). |
-| Top left | Temporary Chat | Starts or ends a temporary chat (in an empty chat). |
-| Top left | New Chat | Starts a new chat (in a conversation, same as ⌘N). |
-| Top right | Expand / Shrink | Makes the panel a large window with the same chat, or small again (same as ⌘F). |
+| Top left | Expand / Shrink | Makes the panel a large window with the same chat, or small again (same as ⌘F). |
+| Top right | Temporary Chat | Starts or ends a temporary chat (in an empty chat). |
+| Top right | New Chat | Starts a new chat (in a conversation, same as ⌘N). |
 | Top right | Close | Closes the panel (same as Esc). |
 
 Drag the title bar or any empty space to move the panel. Throw it (a fast drag) to send it to a side of the screen. Drag an edge to resize it. Each time the app starts, the panel first opens at its default place. It keeps its size across launches.

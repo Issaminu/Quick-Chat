@@ -61,7 +61,7 @@ enum Check {
     }
     static func js(_ web:WKWebView,_ code:String) async -> Any? { try? await web.evaluateJavaScript(code) }
     static func visible(_ buttons:HeaderButtons) -> [String] {
-        [(buttons.sidebar,"sidebar"),(buttons.temporaryChat,"temporary"),(buttons.newChat,"new"),(buttons.expand,"expand"),(buttons.close,"close")]
+        [(buttons.sidebar,"sidebar"),(buttons.expand,"expand"),(buttons.temporaryChat,"temporary"),(buttons.newChat,"new"),(buttons.close,"close")]
             .filter{!$0.0.isHiddenOrHasHiddenAncestor}.map{$0.1}
     }
     static func run() async {
@@ -88,15 +88,15 @@ enum Check {
 
         await wait { visible(buttons).count==4 && !loading.isLoading }
         check(!loading.isLoading,"the loading view hides when the page is ready")
-        check(visible(buttons)==["sidebar","new","expand","close"],"conversation shows Sidebar, New Chat, Expand and Close",visible(buttons))
+        check(visible(buttons)==["sidebar","expand","new","close"],"conversation shows Sidebar, Expand, New Chat and Close",visible(buttons))
         buttons.update(for:URL(string:"https://chatgpt.com/"))
-        check(visible(buttons)==["sidebar","temporary","expand","close"],"empty chat shows Sidebar, Temporary Chat, Expand and Close",visible(buttons))
+        check(visible(buttons)==["sidebar","expand","temporary","close"],"empty chat shows Sidebar, Expand, Temporary Chat and Close",visible(buttons))
         let offImage=buttons.temporaryChat.image
         buttons.update(for:URL(string:"https://chatgpt.com/?temporary-chat=true"))
-        check(visible(buttons)==["sidebar","temporary","expand","close"] && buttons.temporaryChat.isActive,"temporary empty chat shows Sidebar, an active Temporary Chat, Expand and Close")
+        check(visible(buttons)==["sidebar","expand","temporary","close"] && buttons.temporaryChat.isActive,"temporary empty chat shows Sidebar, Expand, an active Temporary Chat and Close")
         check(buttons.temporaryChat.image !== offImage,"an active Temporary Chat shows its filled icon")
         buttons.update(for:URL(string:"https://chatgpt.com/c/abc?temporary-chat=true"))
-        check(visible(buttons)==["sidebar","new","expand","close"],"temporary conversation shows Sidebar, New Chat, Expand and Close")
+        check(visible(buttons)==["sidebar","expand","new","close"],"temporary conversation shows Sidebar, Expand, New Chat and Close")
         buttons.update(for:URL(string:"https://auth.openai.com/log-in"))
         check(visible(buttons).isEmpty,"buttons hide on other sites")
         check(buttons.hitTest(NSPoint(x:200,y:20)) == nil,"the title bar between the buttons belongs to the page")

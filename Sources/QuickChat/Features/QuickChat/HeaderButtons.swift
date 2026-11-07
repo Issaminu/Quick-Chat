@@ -1,8 +1,8 @@
 import AppKit
 
 /// The panel's title bar buttons.
-/// - Top left: Sidebar, then Temporary Chat (empty chat) or New Chat (conversation).
-/// - Top right: Expand (Shrink while the panel is large), then Close at the far right.
+/// - Top left: Sidebar, then Expand (Shrink while the panel is large).
+/// - Top right: Temporary Chat (empty chat) or New Chat (conversation), then Close at the far right.
 /// The view spans the title bar, but only its buttons take clicks; the rest goes to the page.
 final class HeaderButtons: NSView {
     var onClose: (() -> Void)?
@@ -52,7 +52,7 @@ final class HeaderButtons: NSView {
         expand = HeaderButton(image: Self.expandImage, activeImage: Self.symbol("arrow.down.right.and.arrow.up.left"),
                               label: "Expand (⌘F)") { [weak self] in self?.onExpand?() }
         close = HeaderButton(image: Self.closeImage, label: "Close Quick Chat (Esc)") { [weak self] in self?.onClose?() }
-        for (stack, buttons) in [(leadingButtons, [sidebar!, temporaryChat!, newChat!]), (trailingButtons, [expand!, close!])] {
+        for (stack, buttons) in [(leadingButtons, [sidebar!, expand!]), (trailingButtons, [temporaryChat!, newChat!, close!])] {
             stack.orientation = .horizontal
             stack.spacing = 8
             for button in buttons { stack.addArrangedSubview(button) }
@@ -90,6 +90,7 @@ final class HeaderButtons: NSView {
     private func updateVisibility() {
         leadingButtons.isHidden = !location.isChatGPT || !isLeadingAllowed
         sidebar.isHidden = !hasSidebarToggle
+        expand.isHidden = !isChatPage
         temporaryChat.isHidden = !isChatPage || location.isConversation
         newChat.isHidden = !isChatPage || !location.isConversation
         trailingButtons.isHidden = !location.isChatGPT || !isAllowed
