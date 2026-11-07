@@ -254,6 +254,22 @@ enum PageStyleCheck {
             if !presses[name]! { failures += 1 }
         }
 
+        // Focus rings: outside keyboard mode, the style removes outlines and Tailwind's ring
+        // shadows from focused controls (also when a menu gives the focus back after Esc). The
+        // check window is not the key window, so it reads the rule instead of a focused element.
+        let rings = try await web.evaluateJavaScript("""
+            (() => {
+                const rule = document.adoptedStyleSheets.flatMap(s => [...s.cssRules])
+                    .find(r => r.selectorText?.includes(':not([data-quick-chat-keyboard])') && r.selectorText.includes(':focus-visible'));
+                if (!rule) return false;
+                const none = name => rule.style.getPropertyValue(name).replace(/\\s+/g, ' ').trim() === '0 0 #0000' && rule.style.getPropertyPriority(name) === 'important';
+                return rule.style.outlineStyle === 'none' && none('--tw-ring-shadow') && none('--tw-ring-offset-shadow') &&
+                    rule.selectorText.includes('button') && rule.selectorText.includes(':focus)');
+            })()
+            """) as? Bool == true
+        print("\(rings ? "PASS" : "FAIL") focus rings: outside keyboard mode, no outline and no ring shadow on focused controls")
+        if !rings { failures += 1 }
+
         // Light mode: the primary button turns black with a white icon.
         let lightButton = try await web.evaluateJavaScript("""
             (() => {

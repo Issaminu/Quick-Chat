@@ -160,10 +160,16 @@ enum QuickChatPageStyle {
         }
 
         /* Like a native app, focus rings show only while you move the focus with the keyboard
-           (after Tab; the page script sets data-quick-chat-keyboard). A click, or a button of the
-           panel that presses a page button, shows none. */
-        html:not([data-quick-chat-keyboard]) :is(:focus-visible, :focus-visible::before, :focus-visible::after) {
+           (after Tab; the page script sets data-quick-chat-keyboard). A click, a button of the
+           panel that presses a page button, or a menu that gives the focus back to its button
+           (after Esc) shows none. The page draws rings as outlines, and as box shadows through
+           Tailwind's ring variables; the element's other shadows stay. */
+        html:not([data-quick-chat-keyboard]) :is(:focus-visible, :focus-visible::before, :focus-visible::after,
+            :is(button, a, summary, select, [role="button"], [role="link"], [role="tab"], [role="switch"], [role="checkbox"], [role="radio"], [role="combobox"], [role="menuitem"], [role="option"]):focus) {
             outline: none !important;
+            --tw-ring-shadow: 0 0 #0000 !important;
+            --tw-ring-offset-shadow: 0 0 #0000 !important;
+            --tw-inset-ring-shadow: 0 0 #0000 !important;
         }
 
         /* No toolbars on selected text: "Ask ChatGPT" on a message, and text formatting in the
