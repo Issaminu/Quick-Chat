@@ -317,6 +317,21 @@ enum PageStyleCheck {
             """, arguments: [:], in: nil, contentWorld: .page) as? Bool == true
         print("\(shownAtOnce ? "PASS" : "FAIL") pointer back over the panel: the title bar shows at once, without a fade")
         if !shownAtOnce { failures += 1 }
+        let onTop = try await web.callAsyncJavaScript("""
+            const header = document.querySelector('header');
+            const scroller = document.querySelector('[data-app-action-timeline-scroll]');
+            scroller.scrollTop = 0;
+            const hit = document.elementFromPoint(innerWidth / 2, 20);
+            const wheel = new WheelEvent('wheel', { bubbles: true, cancelable: true, clientX: innerWidth / 2, clientY: 20, deltaY: 40 });
+            hit.dispatchEvent(wheel);
+            return [header.contains(hit) ? 'header' : hit?.tagName ?? 'none', getComputedStyle(hit).cursor, scroller.scrollTop, wheel.defaultPrevented];
+            """, arguments: [:], in: nil, contentWorld: .page) as? [Any] ?? []
+        let titleBarOnTop = onTop.count == 4 && onTop[0] as? String == "header" && onTop[1] as? String == "default"
+        print("\(titleBarOnTop ? "PASS" : "FAIL") the title bar takes the pointer and shows the normal pointer over text under it \(titleBarOnTop ? "" : "(\(onTop))")")
+        if !titleBarOnTop { failures += 1 }
+        let wheelThrough = onTop.count == 4 && onTop[2] as? Double == 40 && onTop[3] as? Bool == true
+        print("\(wheelThrough ? "PASS" : "FAIL") the scroll wheel on the title bar scrolls the messages under it \(wheelThrough ? "" : "(\(onTop))")")
+        if !wheelThrough { failures += 1 }
         _ = try await web.evaluateJavaScript("document.documentElement.dataset.quickChatPointer = 'outside'")
         try await Task.sleep(for: .milliseconds(60))
         let fadesOut = try await web.evaluateJavaScript("(v => v > 0 && v < 1)(+getComputedStyle(document.querySelector('header')).getPropertyValue('--quick-chat-title-bar-shown'))") as? Bool == true

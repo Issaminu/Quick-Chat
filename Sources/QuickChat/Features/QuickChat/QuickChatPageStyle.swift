@@ -88,6 +88,9 @@ enum QuickChatPageStyle {
                 pointer-events: none !important;
             }
             & [data-app-shell-header-slot="start"] [data-app-shell-header-slot-content] > :not(:has([aria-controls])) { display: none !important; }
+            /* The title bar is on top: it takes the pointer, so text and links under it get no
+               text pointer and no presses. The page script sends the scroll wheel through. */
+            & header[data-app-shell-titlebar] { pointer-events: auto !important; cursor: default !important; }
         }
         header[data-app-shell-titlebar] .bg-surface { background-color: transparent !important; }
         /* The title bar shows only while the pointer is over the panel (the panel sets
@@ -301,6 +304,24 @@ enum QuickChatPageStyle {
                 if (!inTitleBar && !editing()) getSelection()?.removeAllRanges();
                 post({ type: inTitleBar && event.detail === 2 ? "zoom" : "drag" });
             }, true);
+
+            // The title bar takes the pointer (see the style), so the scroll wheel scrolls the
+            // area under it here: the nearest element that can scroll.
+            document.addEventListener("wheel", event => {
+                const header = event.target instanceof Element ? event.target.closest("header[data-app-shell-titlebar]") : null;
+                if (!header || event.ctrlKey) return;
+                const below = document.elementsFromPoint(event.clientX, event.clientY).find(element => !header.contains(element));
+                for (let element = below; element; element = element.parentElement) {
+                    const style = getComputedStyle(element);
+                    const scrolls = (overflow, size, client) => /auto|scroll/.test(overflow) && size > client;
+                    if (!scrolls(style.overflowY, element.scrollHeight, element.clientHeight) &&
+                        !scrolls(style.overflowX, element.scrollWidth, element.clientWidth)) continue;
+                    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientHeight : 1;
+                    element.scrollBy({ left: event.deltaX * unit, top: event.deltaY * unit, behavior: "instant" });
+                    event.preventDefault();
+                    return;
+                }
+            }, { capture: true, passive: false });
 
             // The composer keeps the text cursor in view: after typing, a paste or a cursor move,
             // its text area scrolls the shortest way that shows the cursor above the area's
