@@ -125,7 +125,7 @@ The ChatGPT shortcuts come from chatgpt.com. They all work in the panel.
 
 ### Find
 
-Press ⌘F to find text on the page. The find bar shows below the title bar, and it marks all matches while you type. The current match is orange, and the page scrolls to it. The bar shows the number of matches, for example "2 of 7". The search ignores upper and lower case, and it finds only text that shows on the page. When ChatGPT writes an answer, the count changes with it. Esc closes the bar and removes the marks. The next ⌘F shows the same text again.
+Press ⌘F to find text on the page. The find bar shows below the title bar, and it marks all matches while you type. The current match is orange, and the page scrolls to it. The bar shows the number of matches, for example "2 of 7". The search ignores upper and lower case. It finds only text that shows on the page and that you can select: the messages and your draft. When ChatGPT writes an answer, the count changes with it. Esc or the bar's close button closes the bar and removes the marks. The clear button in the field also removes them. The next ⌘F shows the same text again.
 
 ### The title bar
 

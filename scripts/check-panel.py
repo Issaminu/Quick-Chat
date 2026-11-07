@@ -144,7 +144,7 @@ enum Check {
         // Find (Command-F): the find bar.
         let findBar=background.subviews.compactMap{$0 as? FindBar}.first!
         let key={(characters:String,flags:NSEvent.ModifierFlags,code:UInt16) in NSEvent.keyEvent(with:.keyDown,location:.zero,modifierFlags:flags,timestamp:0,windowNumber:panel.windowNumber,context:nil,characters:characters,charactersIgnoringModifiers:characters.lowercased(),isARepeat:false,keyCode:code)!}
-        _=await js(web,"document.querySelector('main').insertAdjacentHTML('beforeend','<p>needle one</p><p>Needle two</p>')")
+        _=await js(web,"document.querySelector('main').insertAdjacentHTML('beforeend','<p style=\"-webkit-user-select:text\">needle one</p><p style=\"-webkit-user-select:text\">Needle two</p><p>needle that cannot be selected</p>')")
         let draftBefore=(await js(web,"document.querySelector('#draft').textContent")) as? String
         panel.sendEvent(key("f",.command,3))
         let fieldFocused={ (panel.firstResponder as? NSTextView)?.delegate === findBar.field }
@@ -168,6 +168,39 @@ enum Check {
         await wait { findBar.result.stringValue=="2 of 2" }
         let draftAfter=(await js(web,"document.querySelector('#draft').textContent")) as? String
         check(findBar.result.stringValue=="2 of 2" && draftAfter==draftBefore,"Return in the find bar shows the next match and does not touch the draft",[findBar.result.stringValue,draftAfter ?? "nil"])
+        // The marks must also go from the screen: WebKit does not paint a removed mark list again.
+        // A fresh render of the page cannot show this, so the check reads a capture of the window.
+        let screenMarks={ () async -> Int? in
+            try? await Task.sleep(for:.milliseconds(400))
+            let file=FileManager.default.temporaryDirectory.appendingPathComponent("find-\(UUID().uuidString).png")
+            let capture=Process()
+            capture.executableURL=URL(fileURLWithPath:"/usr/sbin/screencapture")
+            capture.arguments=["-x","-o","-l\(panel.windowNumber)",file.path]
+            try? capture.run(); capture.waitUntilExit()
+            guard let data=try? Data(contentsOf:file), let bitmap=NSBitmapImageRep(data:data) else { return nil }
+            var count=0
+            for x in stride(from:0,to:bitmap.pixelsWide,by:2) { for y in stride(from:0,to:bitmap.pixelsHigh,by:2) {
+                if let c=bitmap.colorAt(x:x,y:y)?.usingColorSpace(.sRGB), c.redComponent>0.85, c.greenComponent>0.5, c.blueComponent<0.6, c.redComponent-c.blueComponent>0.3 { count+=1 } } }
+            return count
+        }
+        if let shown=await screenMarks() {
+            check(shown > 0,"the marks show on the screen",shown)
+            let cancel=(findBar.field.cell as? NSSearchFieldCell)?.cancelButtonCell
+            if let cancel { _=cancel.target?.perform(cancel.action,with:cancel) }
+            let cleared=await screenMarks()
+            check(findBar.field.stringValue.isEmpty && cleared==0,"the field's clear button removes the marks from the screen",[shown,cleared ?? -1])
+            findBar.field.stringValue="needle"
+            findBar.field.sendAction(findBar.field.action,to:findBar.field.target)
+            await wait { findBar.result.stringValue.hasSuffix("of 2") }
+            let close=findBar.subviews.flatMap{$0.subviews}.compactMap{$0 as? NSButton}.last
+            close?.performClick(nil)
+            let closed=await screenMarks()
+            check(findBar.isHidden && closed==0,"the close button removes the marks from the screen",[closed ?? -1])
+            panel.sendEvent(key("f",.command,3))
+            await wait { findBar.result.stringValue.hasSuffix("of 2") }
+        } else {
+            print("SKIP the marks on the screen: no capture of the window (Screen Recording permission)")
+        }
         findBar.field.stringValue="no such text"
         findBar.field.sendAction(findBar.field.action,to:findBar.field.target)
         await wait { findBar.result.stringValue=="Not found" }
@@ -176,8 +209,9 @@ enum Check {
         findBar.field.sendAction(findBar.field.action,to:findBar.field.target)
         await wait { findBar.result.stringValue.hasSuffix("of 2") }
         _=findBar.control(findBar.field,textView:editor ?? NSTextView(),doCommandBy:#selector(NSResponder.cancelOperation(_:)))
-        await wait { (await findWorld("return CSS.highlights.has('quick-chat-find')")) as? Bool == false }
-        let marksGone=(await findWorld("return CSS.highlights.has('quick-chat-find')")) as? Bool == false
+        let markCount="return (CSS.highlights.get('quick-chat-find')?.size ?? 0) + (CSS.highlights.get('quick-chat-find-current')?.size ?? 0)"
+        await wait { (await findWorld(markCount)) as? Int == 0 }
+        let marksGone=(await findWorld(markCount)) as? Int == 0
         check(findBar.isHidden && panel.isVisible && panel.firstResponder === web && marksGone,"Esc in the find bar closes it, removes the marks and gives the focus back to the page")
         panel.sendEvent(key("f",.command,3))
         await wait { findBar.result.stringValue.hasSuffix("of 2") }

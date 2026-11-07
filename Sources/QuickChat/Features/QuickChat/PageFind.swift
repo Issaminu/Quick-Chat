@@ -52,8 +52,23 @@ enum PageFind {
                 return rect.width > 1 || rect.height > 1 ? NodeFilter.FILTER_SKIP : NodeFilter.FILTER_REJECT;
             };
 
+            // WebKit does not mark text that cannot be selected, so the search skips it. (The panel
+            // turns off selection outside the messages and the composer, so that a drag there moves
+            // the panel.)
+            const selectable = new Map();
+            const canSelect = element => {
+                let value = selectable.get(element);
+                if (value === undefined) {
+                    const style = getComputedStyle(element);
+                    value = (style.webkitUserSelect || style.userSelect) !== "none";
+                    selectable.set(element, value);
+                }
+                return value;
+            };
+
             // The text of the page as one string, with a block break between blocks.
             const collect = () => {
+                selectable.clear();
                 const nodes = [], starts = [];
                 let text = "", lastBlock = null;
                 if (!document.body) return { nodes, starts, text };
@@ -74,7 +89,7 @@ enum PageFind {
                     acceptNode: node => node.nodeType === Node.TEXT_NODE ? NodeFilter.FILTER_ACCEPT : accept(node),
                 });
                 for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-                    if (node.nodeType !== Node.TEXT_NODE || !node.data) continue;
+                    if (node.nodeType !== Node.TEXT_NODE || !node.data || !canSelect(node.parentElement)) continue;
                     const block = blockOf(node.parentElement);
                     if (block !== lastBlock && text) text += blockBreak;
                     lastBlock = block;
@@ -126,17 +141,23 @@ enum PageFind {
                 return Math.max(next, 0);
             };
 
+            // WebKit paints a range again when it is added to or removed from a mark list that is on
+            // the page, but not when a list is added to the page, removed from it or replaced. So each color has one list, and
+            // only its ranges change.
+            const marks = globalThis.Highlight ? { all: new Highlight(), current: new Highlight() } : null;
+            if (marks) marks.current.priority = 1;
             const paint = () => {
-                if (!globalThis.Highlight || !CSS.highlights) return;
+                if (!marks || !CSS.highlights) return;
                 if (!document.adoptedStyleSheets.includes(style)) {
                     document.adoptedStyleSheets = [...document.adoptedStyleSheets, style];
                 }
-                CSS.highlights.set(allName, new Highlight(...matches));
-                const current = matches[index];
-                if (!current) return CSS.highlights.delete(currentName);
-                const highlight = new Highlight(current);
-                highlight.priority = 1;
-                CSS.highlights.set(currentName, highlight);
+                // The lists are on the page before their ranges change, so the change paints.
+                if (CSS.highlights.get(allName) !== marks.all) CSS.highlights.set(allName, marks.all);
+                if (CSS.highlights.get(currentName) !== marks.current) CSS.highlights.set(currentName, marks.current);
+                marks.all.clear();
+                for (const range of matches) marks.all.add(range);
+                marks.current.clear();
+                if (matches[index]) marks.current.add(matches[index]);
             };
 
             const scroller = element => {
@@ -210,8 +231,8 @@ enum PageFind {
                     observer.disconnect();
                     clearTimeout(timer);
                     timer = 0;
-                    CSS.highlights?.delete(allName);
-                    CSS.highlights?.delete(currentName);
+                    marks?.all.clear();
+                    marks?.current.clear();
                     return state();
                 },
             };

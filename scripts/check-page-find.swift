@@ -36,6 +36,7 @@ enum PageFindCheck {
           <p style="visibility:hidden">apple invisible</p>
           <p style="opacity:0">apple transparent</p>
           <span class="sr-only">apple for screen readers</span>
+          <p style="-webkit-user-select:none">apple that cannot be selected</p>
           <textarea>apple in a text area</textarea>
           <script>/* apple in a script */</script>
           <div id="spacer"></div><p id="low">lowword</p>
@@ -93,7 +94,7 @@ enum PageFindCheck {
         expect("the page cannot see the search", try await page("return typeof quickChatFind") as? String == "undefined")
 
         var result = try await find("return quickChatFind.find('apple', inset)")
-        expect("finds only the text that shows, in any case", result["count"] as? Int == 4, result)
+        expect("finds only the text that shows and can be selected, in any case", result["count"] as? Int == 4, result)
         expect("starts at the first match on screen", result["index"] as? Int == 0, result)
         // Each script world has its own view of the marks, so the check reads them in the find world.
         expect("marks all matches and the current match",
@@ -170,7 +171,7 @@ enum PageFindCheck {
 
         _ = try await find("return quickChatFind.clear()")
         expect("close removes the marks",
-               try await marks("return CSS.highlights.has('quick-chat-find') || CSS.highlights.has('quick-chat-find-current')") as? Bool == false)
+               try await marks("return (CSS.highlights.get('quick-chat-find')?.size ?? 0) + (CSS.highlights.get('quick-chat-find-current')?.size ?? 0)") as? Int == 0)
 
         print(failures == 0 ? "All find checks passed" : "\(failures) find checks failed")
         exit(failures == 0 ? 0 : 1)
