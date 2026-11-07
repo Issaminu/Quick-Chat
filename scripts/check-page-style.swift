@@ -309,6 +309,20 @@ enum PageStyleCheck {
             """) as? Bool == true
         print("\(hidden ? "PASS" : "FAIL") pointer outside the panel: the title bar is hidden and messages may use its space")
         if !hidden { failures += 1 }
+        let shownAtOnce = try await web.callAsyncJavaScript("""
+            document.documentElement.dataset.quickChatPointer = 'inside';
+            await new Promise(resolve => requestAnimationFrame(resolve));
+            return getComputedStyle(document.querySelector('header')).opacity === '1' &&
+                getComputedStyle(document.documentElement).getPropertyValue('--quick-chat-title-bar-shown').trim() === '1';
+            """, arguments: [:], in: nil, contentWorld: .page) as? Bool == true
+        print("\(shownAtOnce ? "PASS" : "FAIL") pointer back over the panel: the title bar shows at once, without a fade")
+        if !shownAtOnce { failures += 1 }
+        _ = try await web.evaluateJavaScript("document.documentElement.dataset.quickChatPointer = 'outside'")
+        try await Task.sleep(for: .milliseconds(60))
+        let fadesOut = try await web.evaluateJavaScript("(v => v > 0 && v < 1)(+getComputedStyle(document.documentElement).getPropertyValue('--quick-chat-title-bar-shown'))") as? Bool == true
+        print("\(fadesOut ? "PASS" : "FAIL") pointer outside the panel again: the title bar fades out")
+        if !fadesOut { failures += 1 }
+        try await Task.sleep(for: .milliseconds(300))
         // The normal page did not start safe mode (its checks ran 1.5 and 5 seconds after load).
         try await Task.sleep(for: .seconds(1))
         let styleOn = try await web.evaluateJavaScript("!document.documentElement.hasAttribute('data-quick-chat-safe-mode') && document.adoptedStyleSheets.some(s => !s.disabled && [...s.cssRules].some(r => r.name === '--quick-chat-title-bar-shown'))") as? Bool == true

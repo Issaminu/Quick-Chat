@@ -400,8 +400,9 @@ final class QuickChatController: NSObject {
         }
     }
 
-    /// All the title bar buttons are the panel's own, so one fade shows or hides all of them.
-    /// The page fades the messages under the title bar with the same duration and curve. Its fade
+    /// All the title bar buttons are the panel's own, so one change shows or hides all of them.
+    /// The title bar shows at once, without a fade. It hides with a fade, and the page fades its
+    /// title bar band and the messages under it with the same duration and curve. The page's fade
     /// starts when the page gets the new state, so the buttons' fade starts then too. A busy page
     /// can take longer; the buttons then wait at most 0.15 seconds.
     private func showTitleBar(_ shown: Bool) {
@@ -409,6 +410,17 @@ final class QuickChatController: NSObject {
         isTitleBarShown = shown
         titleBarChange += 1
         let change = titleBarChange
+        if shown {
+            // This also stops a hide fade that is in progress.
+            titleBarFadeStarted = change
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            headerButtons?.layer?.removeAnimation(forKey: "opacity")
+            headerButtons?.alphaValue = 1
+            CATransaction.commit()
+            applyPointerState()
+            return
+        }
         applyPointerState { [weak self] in self?.fadeTitleBar(change) }
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(150))
@@ -419,11 +431,10 @@ final class QuickChatController: NSObject {
     private func fadeTitleBar(_ change: Int) {
         guard change == titleBarChange, change != titleBarFadeStarted else { return }
         titleBarFadeStarted = change
-        let shown = isTitleBarShown
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.2
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            headerButtons?.animator().alphaValue = shown ? 1 : 0
+            headerButtons?.animator().alphaValue = 0
         }
     }
 

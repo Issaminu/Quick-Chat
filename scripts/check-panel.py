@@ -152,9 +152,18 @@ enum Check {
         let pointerOutside=(await js(web,"document.documentElement.dataset.quickChatPointer")) as? String
         check(buttons.alphaValue == 0 && pointerOutside == "outside","the title bar hides while the pointer is outside the panel")
         controller.setPointerInside(true)
-        await wait { buttons.alphaValue == 1 }
+        let opacity={ CGFloat(buttons.layer?.presentation()?.opacity ?? buttons.layer?.opacity ?? -1) }
+        check(buttons.alphaValue == 1 && (buttons.layer?.animationKeys() ?? []).isEmpty,"the title bar shows at once, without a fade, when the pointer comes back",buttons.layer?.animationKeys() ?? [])
+        try? await Task.sleep(for:.milliseconds(30))
+        check(opacity() == 1,"the shown title bar is fully opaque on screen",opacity())
         let pointerInside=(await js(web,"document.documentElement.dataset.quickChatPointer")) as? String
-        check(buttons.alphaValue == 1 && pointerInside == "inside","the title bar shows again when the pointer comes back")
+        check(pointerInside == "inside","the page gets the pointer state")
+        controller.setPointerInside(false,immediately:true)
+        try? await Task.sleep(for:.milliseconds(80))
+        let midFade=opacity()
+        controller.setPointerInside(true)
+        try? await Task.sleep(for:.milliseconds(30))
+        check(midFade > 0 && midFade < 1 && opacity() == 1,"the pointer stops a hide fade and shows the title bar at once",[midFade,opacity()])
 
         let materials=[background, loading, cover].compactMap{$0 as? PanelMaterialView}
         _=await js(web,"document.documentElement.style.colorScheme='light'")
