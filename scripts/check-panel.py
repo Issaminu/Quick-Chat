@@ -205,6 +205,24 @@ enum Check {
         await wait(seconds:10) { !panel.isMaximized && panel.frame==frame && cover.alphaValue == 0 }
         check(!panel.isMaximized && panel.frame==frame,"Shrink restores the frame")
 
+        // A panel that the user made as wide as the page's wide layout (the page docks its
+        // sidebar, so its main area starts at x > 0) counts as large.
+        let state="{type:'state',ready:true,close:true,chat:true,sidebar:false,buttons:true,dark:true,left:"
+        panel.setFrame(NSRect(x:frame.minX,y:frame.minY,width:900,height:frame.height),display:true)
+        _=await js(web,"webkit.messageHandlers.quickChat.postMessage(\(state)52})")
+        await wait { panel.isPageWide && buttons.expand.showsOtherImage }
+        controller.setPointerInside(false)
+        try? await Task.sleep(for:.milliseconds(800))
+        check(panel.isLarge && buttons.expand.showsOtherImage && buttons.alphaValue == 1,"a panel as wide as the page's wide layout shows Shrink and keeps its title bar")
+        buttons.expand.performClick(nil)
+        await wait(seconds:10) { panel.frame.size==QuickChatPanel.defaultSize && cover.alphaValue == 0 }
+        check(!panel.isMaximized && panel.frame.size==QuickChatPanel.defaultSize && panel.frame.minX==frame.minX,"Shrink on a wide panel goes to the default size",panel.frame)
+        _=await js(web,"webkit.messageHandlers.quickChat.postMessage(\(state)0})")
+        await wait { !panel.isPageWide && !buttons.expand.showsOtherImage }
+        check(!panel.isLarge && !buttons.expand.showsOtherImage,"a narrow panel shows Expand again")
+        panel.setFrame(frame,display:true)
+        controller.setPointerInside(true)
+
         buttons.close.performClick(nil)
         check(!panel.isVisible,"Close hides the panel")
         controller.show()

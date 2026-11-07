@@ -18,7 +18,7 @@ final class QuickChatPanel: NSPanel {
     var waitForContent: ((CGFloat) async -> Void)?
     /// Local key combo that calls `resetSize()` while the panel is key (default ⌘O).
     var resetSizeShortcut: Shortcut? = .commandO
-    /// Local key combo that calls `toggleMaximize()` while the panel is key (default ⌘F).
+    /// Local key combo that calls `expandOrShrink()` while the panel is key (default ⌘F).
     var maximizeShortcut: Shortcut? = .commandF
 
     /// The user's frame from before maximizing; non-nil while maximized. Hiding and showing
@@ -27,6 +27,11 @@ final class QuickChatPanel: NSPanel {
         didSet { if (oldValue == nil) != (restoreFrame == nil) { onMaximizedChange?(isMaximized) } }
     }
     var isMaximized: Bool { restoreFrame != nil }
+    /// The page shows its wide layout: it docks its sidebar on the left. The page does this from
+    /// a width of 768 points. The controller sets it from the page's state.
+    var isPageWide = false
+    /// A maximized panel, or a panel that the user made as wide as the page's wide layout.
+    var isLarge: Bool { isMaximized || isPageWide }
     private var frameTransition: Task<Void, Never>?
     /// A throw in progress (see PanelThrow).
     var throwMotion: ThrowMotion?
@@ -62,8 +67,15 @@ final class QuickChatPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
-    /// Window ▸ Zoom uses the same maximize behavior as the drag region and shortcut.
-    override func zoom(_ sender: Any?) { toggleMaximize() }
+    /// Window ▸ Zoom does the same as Expand, a double-click on the title bar, and ⌘F.
+    override func zoom(_ sender: Any?) { expandOrShrink() }
+
+    /// Expand or Shrink: a small panel fills the screen, and a maximized panel goes back to its
+    /// frame from before. A panel that the user made large (the page shows its wide layout)
+    /// goes to the default size.
+    func expandOrShrink() {
+        if isMaximized || !isPageWide { toggleMaximize() } else { resetSize() }
+    }
 
     /// Esc (when the page doesn't handle it) hides the panel.
     override func cancelOperation(_ sender: Any?) { onCancel?() }
@@ -198,7 +210,7 @@ final class QuickChatPanel: NSPanel {
         if pressed == resetSizeShortcut {
             resetSize()
         } else if pressed == maximizeShortcut {
-            toggleMaximize()
+            expandOrShrink()
         } else {
             return false
         }

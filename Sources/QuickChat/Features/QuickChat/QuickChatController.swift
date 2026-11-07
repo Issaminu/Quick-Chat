@@ -146,13 +146,7 @@ final class QuickChatController: NSObject {
         panel.onCancel = { [weak self] in self?.hide(restoreFocus: true) }
         panel.onNewConversation = { [weak self] in self?.newConversation() }
         panel.onToggleSidebar = { [weak self] in self?.toggleSidebar() }
-        panel.onMaximizedChange = { [weak self] maximized in
-            guard let self, let panel = self.panel else { return }
-            self.headerButtons?.isExpanded = maximized
-            // The large window always shows its title bar; the small panel hides it again when
-            // the pointer is not over it.
-            self.setPointerInside(panel.frame.contains(NSEvent.mouseLocation))
-        }
+        panel.onMaximizedChange = { [weak self] _ in self?.updateLargeState() }
         panel.waitForContent = { [weak self] width in await self?.waitForPageLayout(width: width) }
         panel.resetSizeShortcut = resetSizeShortcut
         panel.maximizeShortcut = maximizeShortcut
@@ -173,7 +167,7 @@ final class QuickChatController: NSObject {
         let headerButtons = HeaderButtons()
         headerButtons.onClose = { [weak self] in self?.hide(restoreFocus: true) }
         headerButtons.onSidebar = { [weak self] in self?.toggleSidebar() }
-        headerButtons.onExpand = { [weak self] in self?.panel?.toggleMaximize() }
+        headerButtons.onExpand = { [weak self] in self?.panel?.expandOrShrink() }
         headerButtons.onTemporaryChat = { [weak self] in self?.toggleTemporaryChat() }
         headerButtons.onNewChat = { [weak self] in self?.newConversation() }
         let loadingView = LoadingView()
@@ -313,11 +307,19 @@ final class QuickChatController: NSObject {
     /// Opens or closes the page's sidebar with the page's own (hidden) sidebar button. The page
     /// then moves the focus to a sidebar button, which opens that button's tooltip; the panel
     /// takes the focus off it again, as a click on the page would leave no focused button.
+    /// The small layout has a sidebar button in the page's title bar. The wide layout has none
+    /// (its sidebar is a docked row of icons), so the page then gets its own sidebar shortcut, ⌘⇧S.
     private func toggleSidebar() {
+        // In a block: each call runs in the page's global scope, where a second top-level
+        // `const` with the same name fails.
         webView?.evaluateJavaScript("""
-            [...document.querySelectorAll('header[data-app-shell-titlebar] button[aria-controls]')]
-                .find(element => element.getClientRects().length > 0)?.click();
-            setTimeout(() => { if (document.activeElement?.matches('button, [role="button"]')) document.activeElement.blur(); }, 60);
+            {
+                const toggle = [...document.querySelectorAll('header[data-app-shell-titlebar] button[aria-controls]')]
+                    .find(element => element.getClientRects().length > 0);
+                if (toggle) toggle.click();
+                else for (const type of ['keydown', 'keyup']) document.dispatchEvent(new KeyboardEvent(type, { key: 'S', code: 'KeyS', keyCode: 83, metaKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+                setTimeout(() => { if (document.activeElement?.matches('button, [role="button"]')) document.activeElement.blur(); }, 60);
+            }
             """)
     }
 
@@ -369,7 +371,7 @@ final class QuickChatController: NSObject {
         case "drag":
             dragPanel()
         case "zoom":
-            panel?.toggleMaximize()
+            panel?.expandOrShrink()
         case "escape":
             hide(restoreFocus: true)
         case "state":
@@ -381,7 +383,13 @@ final class QuickChatController: NSObject {
             }
             headerButtons?.isLeadingAllowed = message["close"] as? Bool ?? false
             headerButtons?.isChatPage = message["chat"] as? Bool ?? false
-            headerButtons?.leadingInset = CGFloat(message["left"] as? Double ?? 0)
+            let left = message["left"] as? Double ?? 0
+            headerButtons?.leadingInset = CGFloat(left)
+            // The main area starts to the right of a docked sidebar: the page shows its wide layout.
+            if let panel, panel.isPageWide != (left > 0) {
+                panel.isPageWide = left > 0
+                updateLargeState()
+            }
             headerButtons?.hasSidebarToggle = message["sidebar"] as? Bool ?? true
             headerButtons?.isAllowed = ready && message["buttons"] as? Bool == true
             pageIsDark = message["dark"] as? Bool
@@ -391,14 +399,23 @@ final class QuickChatController: NSObject {
         }
     }
 
+    /// A large panel (maximized, or as wide as the page's wide layout) shows Shrink, and it
+    /// always shows its title bar. A small panel shows Expand, and it hides the title bar again
+    /// when the pointer is not over it.
+    private func updateLargeState() {
+        guard let panel else { return }
+        headerButtons?.isExpanded = panel.isLarge
+        setPointerInside(panel.frame.contains(NSEvent.mouseLocation))
+    }
+
     /// In the small panel, the title bar shows while the pointer is over the panel. It hides 0.5
     /// seconds after the pointer leaves, unless the pointer comes back first. `immediately` skips
-    /// that delay. In the large window, it always shows.
+    /// that delay. In a large panel, it always shows.
     func setPointerInside(_ inside: Bool, immediately: Bool = false) {
         hideTitleBar?.cancel()
         hideTitleBar = nil
-        // The large window has room for the title bar, so it always shows there.
-        if panel?.isMaximized == true { return showTitleBar(true) }
+        // A large panel has room for the title bar, so it always shows there.
+        if panel?.isLarge == true { return showTitleBar(true) }
         if inside || immediately { return showTitleBar(inside) }
         hideTitleBar = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(500))

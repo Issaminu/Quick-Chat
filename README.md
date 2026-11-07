@@ -26,7 +26,7 @@ This is a fork of [shuaibird/Quick-Chat](https://github.com/shuaibird/Quick-Chat
 - **It looks native.** The panel has the macOS translucent material, rounded corners with a real shadow, and the system font with the system's font smoothing. It follows ChatGPT's light or dark theme; the light theme gets a lighter, white-tinted material so that ChatGPT's gray text stays readable.
 - **Only the chat.** The empty chat shows only the composer. Greetings, suggestions, notices, the disclaimer and the selection toolbars are hidden.
 - **The title bar comes when you need it.** In the small panel, it shows while the pointer is over the panel, and fades out 0.5 seconds after the pointer leaves. Then the messages use its space. In the large window, it always shows.
-- **Small or large.** **Expand** (or a double-click on the title bar, or ⌘F) makes the panel a large window with the same chat. **Shrink** makes it small again. The page never shows a half-drawn layout during the change.
+- **Small or large.** **Expand** (or a double-click on the title bar, or ⌘F) makes the panel a large window with the same chat. **Shrink** makes it small again. A panel that you make 768 points wide or more also counts as large: ChatGPT then docks its sidebar, and the button shows **Shrink**, which goes back to the default size. The page never shows a half-drawn layout during the change.
 - **Move it from anywhere.** Like ChatGPT's own companion window, you can drag the panel by the title bar or by any empty space: between and beside messages, or in the composer around its text field. Text, messages, answers and controls keep working as usual.
 - **Throw it to the side.** Drag the panel fast and let go while you move, and the panel flies to the left or right edge of the screen, like ChatGPT's own companion window. A slow drag, or a drag that stops before you let go, moves the panel only as far as the pointer.
 - **Temporary chats.** One click starts a chat that does not go into your history. The icon fills while a temporary chat is on.
@@ -123,7 +123,7 @@ The ChatGPT shortcuts come from chatgpt.com. They all work in the panel.
 
 ### The title bar
 
-In the small panel, the title bar shows while the pointer is over the panel, and all its buttons fade in and out together. In the large window, it always shows.
+In the small panel, the title bar shows while the pointer is over the panel, and all its buttons fade in and out together. In a large panel (expanded, or 768 points wide or more), it always shows.
 
 | Place | Button | Action |
 | --- | --- | --- |
@@ -135,7 +135,7 @@ In the small panel, the title bar shows while the pointer is over the panel, and
 
 Drag the title bar or any empty space to move the panel. Throw it (a fast drag) to send it to a side of the screen. Drag an edge to resize it. Each time the app starts, the panel first opens at its default place. It keeps its size across launches.
 
-In the large window, ChatGPT docks its row of icons on the left. Point at them to see the sidebar.
+In a large panel, ChatGPT docks its row of icons on the left. Point at them to see the sidebar, or press ⌘B to open or close the full sidebar.
 
 ## Design details
 

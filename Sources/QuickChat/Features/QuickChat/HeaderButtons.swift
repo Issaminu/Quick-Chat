@@ -24,7 +24,8 @@ final class HeaderButtons: NSView {
     var leadingInset: CGFloat = 0 {
         didSet { leadingConstraint.constant = CGFloat(QuickChatPageStyle.composerInset) + leadingInset }
     }
-    /// The panel is large (maximized): the button then shrinks it.
+    /// The panel is large (maximized, or as wide as the page's wide layout): the button then
+    /// shrinks it.
     var isExpanded = false {
         didSet {
             expand.showsOtherImage = isExpanded
