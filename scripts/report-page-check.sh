@@ -11,7 +11,7 @@
 # When the problem goes away, the run closes the issue.
 set -euo pipefail
 
-: "${OUTCOME:?}" "${REPORT:?}" "${RUN_URL:?}"
+: "${OUTCOME:?}" "${REPORT:?}" "${RUN_URL:?}" "${GH_REPO:?}"
 
 title_of() {
   case "$1" in
@@ -51,22 +51,28 @@ if [ "$OUTCOME" = broken ] && [ -f "${RESULT:-}" ]; then
   marker="broken: $(jq -r '.broken | join(", ")' "$RESULT")"
 fi
 
-open_issue() { gh issue list --label "$1" --state open --limit 1 --json number --jq '.[0].number // empty'; }
+# The open issues with a label, oldest first. The REST list shows a new issue at once (the
+# label filter of `gh issue list` can miss an issue for some seconds after it is made).
+open_issues() {
+  gh api "repos/$GH_REPO/issues?labels=$1&state=open&sort=created&direction=asc&per_page=100" \
+    --jq '.[] | select(.pull_request == null) | .number'
+}
+open_issue() { open_issues "$1" | head -n 1; }
 
-close_issue() { # label, reason
+close_issues() { # label, reason
   local number
-  number=$(open_issue "$1")
-  [ -n "$number" ] || return 0
-  gh issue close "$number" --comment "$2 ([run]($RUN_URL))"
-  echo "Closed issue #$number ($1)"
+  for number in $(open_issues "$1"); do
+    gh issue close "$number" --comment "$2 ([run]($RUN_URL))"
+    echo "Closed issue #$number ($1)"
+  done
 }
 
 # A problem that this run did not find is gone.
 reached=(page-check-blocked page-check-failed)        # the check reached ChatGPT
 case "$OUTCOME" in
-  ok) for l in page-change page-check-session "${reached[@]}"; do close_issue "$l" "The daily page check passes again: all page hooks work."; done ;;
-  broken) for l in page-check-session "${reached[@]}"; do close_issue "$l" "The daily page check runs again."; done ;;
-  session) for l in "${reached[@]}"; do close_issue "$l" "The daily page check reaches ChatGPT again."; done ;;
+  ok) for l in page-change page-check-session "${reached[@]}"; do close_issues "$l" "The daily page check passes again: all page hooks work."; done ;;
+  broken) for l in page-check-session "${reached[@]}"; do close_issues "$l" "The daily page check runs again."; done ;;
+  session) for l in "${reached[@]}"; do close_issues "$l" "The daily page check reaches ChatGPT again."; done ;;
 esac
 [ -n "$label" ] || exit 0
 
