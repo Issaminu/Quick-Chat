@@ -140,6 +140,60 @@ enum Check {
         panel.sendEvent(NSEvent.keyEvent(with:.keyDown,location:.zero,modifierFlags:.command,timestamp:0,windowNumber:panel.windowNumber,context:nil,characters:"b",charactersIgnoringModifiers:"b",isARepeat:false,keyCode:11)!)
         await wait { (await js(web,"clicks.sidebar")) as? Int == 2 }
         check((await js(web,"clicks.sidebar")) as? Int == 2,"Command-B opens or closes the sidebar")
+
+        // Find (Command-F): the find bar.
+        let findBar=background.subviews.compactMap{$0 as? FindBar}.first!
+        let key={(characters:String,flags:NSEvent.ModifierFlags,code:UInt16) in NSEvent.keyEvent(with:.keyDown,location:.zero,modifierFlags:flags,timestamp:0,windowNumber:panel.windowNumber,context:nil,characters:characters,charactersIgnoringModifiers:characters.lowercased(),isARepeat:false,keyCode:code)!}
+        _=await js(web,"document.querySelector('main').insertAdjacentHTML('beforeend','<p>needle one</p><p>Needle two</p>')")
+        let draftBefore=(await js(web,"document.querySelector('#draft').textContent")) as? String
+        panel.sendEvent(key("f",.command,3))
+        let fieldFocused={ (panel.firstResponder as? NSTextView)?.delegate === findBar.field }
+        check(!findBar.isHidden && fieldFocused() && !panel.isMaximized,"Command-F opens the find bar with the focus in its field, and does not expand the panel")
+        findBar.field.stringValue="needle"
+        findBar.field.sendAction(findBar.field.action,to:findBar.field.target)
+        await wait { findBar.result.stringValue=="1 of 2" }
+        check(findBar.result.stringValue=="1 of 2","the find bar searches while you type and shows the count",findBar.result.stringValue)
+        // Each script world has its own view of the marks, so the check reads them in the find world.
+        let findWorld={(code:String) async -> Any? in try? await web.callAsyncJavaScript(code,arguments:[:],in:nil,contentWorld:PageFind.world)}
+        let marks=(await findWorld("return CSS.highlights.get('quick-chat-find')?.size")) as? Int
+        check(marks==2,"the page marks the matches",marks as Any)
+        panel.sendEvent(key("g",.command,5))
+        await wait { findBar.result.stringValue=="2 of 2" }
+        check(findBar.result.stringValue=="2 of 2","Command-G shows the next match",findBar.result.stringValue)
+        panel.sendEvent(key("G",[.command,.shift],5))
+        await wait { findBar.result.stringValue=="1 of 2" }
+        check(findBar.result.stringValue=="1 of 2","Shift-Command-G shows the previous match",findBar.result.stringValue)
+        let editor=panel.firstResponder as? NSTextView
+        _=findBar.control(findBar.field,textView:editor ?? NSTextView(),doCommandBy:#selector(NSResponder.insertNewline(_:)))
+        await wait { findBar.result.stringValue=="2 of 2" }
+        let draftAfter=(await js(web,"document.querySelector('#draft').textContent")) as? String
+        check(findBar.result.stringValue=="2 of 2" && draftAfter==draftBefore,"Return in the find bar shows the next match and does not touch the draft",[findBar.result.stringValue,draftAfter ?? "nil"])
+        findBar.field.stringValue="no such text"
+        findBar.field.sendAction(findBar.field.action,to:findBar.field.target)
+        await wait { findBar.result.stringValue=="Not found" }
+        check(findBar.result.stringValue=="Not found","the find bar says when there is no match",findBar.result.stringValue)
+        findBar.field.stringValue="needle"
+        findBar.field.sendAction(findBar.field.action,to:findBar.field.target)
+        await wait { findBar.result.stringValue.hasSuffix("of 2") }
+        _=findBar.control(findBar.field,textView:editor ?? NSTextView(),doCommandBy:#selector(NSResponder.cancelOperation(_:)))
+        await wait { (await findWorld("return CSS.highlights.has('quick-chat-find')")) as? Bool == false }
+        let marksGone=(await findWorld("return CSS.highlights.has('quick-chat-find')")) as? Bool == false
+        check(findBar.isHidden && panel.isVisible && panel.firstResponder === web && marksGone,"Esc in the find bar closes it, removes the marks and gives the focus back to the page")
+        panel.sendEvent(key("f",.command,3))
+        await wait { findBar.result.stringValue.hasSuffix("of 2") }
+        check(findBar.field.stringValue=="needle" && findBar.result.stringValue.hasSuffix("of 2"),"Command-F again searches for the last text",findBar.result.stringValue)
+        _=await js(web,"webkit.messageHandlers.quickChat.postMessage({type:'escape'})")
+        await wait { findBar.isHidden }
+        check(findBar.isHidden && panel.isVisible,"Esc from the page closes the find bar first, not the panel")
+        check(buttons.expand.toolTip=="Expand (⌃⌘F)","the Expand tooltip shows Control-Command-F",buttons.expand.toolTip ?? "nil")
+        let smallFrame=panel.frame
+        panel.sendEvent(key("\u{6}",[.command,.control],3))
+        await wait { panel.isMaximized }
+        check(panel.isMaximized && findBar.isHidden,"Control-Command-F expands the panel")
+        panel.sendEvent(key("\u{6}",[.command,.control],3))
+        await wait(seconds:10) { !panel.isMaximized && panel.frame==smallFrame && cover.alphaValue == 0 }
+        check(!panel.isMaximized && panel.frame==smallFrame,"Control-Command-F again shrinks the panel")
+        _=await js(web,"document.querySelectorAll('main > p').forEach(p => p.remove())")
         controller.setPointerInside(false)
         try? await Task.sleep(for:.milliseconds(250))
         controller.setPointerInside(true)

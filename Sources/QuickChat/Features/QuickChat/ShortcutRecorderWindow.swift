@@ -80,7 +80,8 @@ final class ShortcutRecorderWindow: NSObject, NSWindowDelegate {
         ("X", cmdKey, "Cut"), ("C", cmdKey, "Copy"), ("V", cmdKey, "Paste"),
         ("V", cmdKey | optionKey | shiftKey, "Paste and Match Style"), ("A", cmdKey, "Select All"),
         ("Z", cmdKey, "Undo"), ("Z", cmdKey | shiftKey, "Redo"), ("W", cmdKey, "Close"), ("Q", cmdKey, "Quit"),
-        ("N", cmdKey, "New Chat"),
+        ("N", cmdKey, "New Chat"), ("F", cmdKey, "Find"), ("G", cmdKey, "Find Next"),
+        ("G", cmdKey | shiftKey, "Find Previous"),
     ]
 
     /// Why `new` can't go in `field`: it's a reserved combo, or another of the three fields already has it.
@@ -91,7 +92,7 @@ final class ShortcutRecorderWindow: NSObject, NSWindowDelegate {
             return "\(new.displayString) is \(combo.name).\nPick another combo."
         }
         let names: [(RecorderField, String)] = [
-            (recorder, "the Quick Chat shortcut"), (resetSizeRecorder, "Reset Window Size"), (maximizeRecorder, "Maximize"),
+            (recorder, "the Quick Chat shortcut"), (resetSizeRecorder, "Reset Window Size"), (maximizeRecorder, "Expand / Shrink"),
         ]
         guard let name = names.first(where: { $0.0 !== field && $0.0.shortcut == new })?.1 else { return nil }
         return "\(new.displayString) is already \(name).\nPick another combo, or change that one first."
@@ -112,9 +113,9 @@ final class ShortcutRecorderWindow: NSObject, NSWindowDelegate {
                                                detail: "Works only while Quick Chat is focused.")
         let resetSizeReset = NSButton(title: "Reset to ⌘O", target: self, action: #selector(resetResetSizeToDefault))
         let resetSizeRow = NSStackView(views: [resetSizeRecorder, resetSizeReset])
-        let maximizeLabel = Self.sectionLabel("Maximize / Restore Size",
+        let maximizeLabel = Self.sectionLabel("Expand / Shrink",
                                               detail: "Works only while Quick Chat is focused.")
-        let maximizeReset = NSButton(title: "Reset to ⌘F", target: self, action: #selector(resetMaximizeToDefault))
+        let maximizeReset = NSButton(title: "Reset to \(Shortcut.controlCommandF.displayString)", target: self, action: #selector(resetMaximizeToDefault))
         let maximizeRow = NSStackView(views: [maximizeRecorder, maximizeReset])
         for button in [reset, resetSizeReset, maximizeReset] {
             button.setContentHuggingPriority(.required, for: .horizontal)
@@ -194,10 +195,10 @@ final class ShortcutRecorderWindow: NSObject, NSWindowDelegate {
     }
 
     @objc private func resetMaximizeToDefault() {
-        if let reason = maximizeRecorder.validate?(.commandF) { return showRejection(reason) }
+        if let reason = maximizeRecorder.validate?(.controlCommandF) { return showRejection(reason) }
         showRules()
-        maximizeRecorder.shortcut = .commandF
-        onMaximizeChange?(.commandF)
+        maximizeRecorder.shortcut = .controlCommandF
+        onMaximizeChange?(.controlCommandF)
     }
 
     @objc private func finish() { window?.close() }

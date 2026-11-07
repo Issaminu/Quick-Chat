@@ -26,7 +26,7 @@ This is a fork of [shuaibird/Quick-Chat](https://github.com/shuaibird/Quick-Chat
 - **It looks native.** The panel has the macOS translucent material, rounded corners with a real shadow, and the system font with the system's font smoothing. It follows ChatGPT's light or dark theme; the light theme gets a lighter, white-tinted material so that ChatGPT's gray text stays readable.
 - **Only the chat.** The empty chat shows only the composer. Greetings, suggestions, notices, the disclaimer and the selection toolbars are hidden.
 - **The title bar comes when you need it.** In the small panel, it shows while the pointer is over the panel, and fades out 0.5 seconds after the pointer leaves. Then the messages use its space. In the large window, it always shows.
-- **Small or large.** **Expand** (or a double-click on the title bar, or ⌘F) makes the panel a large window with the same chat. **Shrink** makes it small again. A panel that you make 768 points wide or more also counts as large: ChatGPT then docks its sidebar, and the button shows **Shrink**, which goes back to the default size. The page never shows a half-drawn layout during the change.
+- **Small or large.** **Expand** (or a double-click on the title bar, or ⌃⌘F) makes the panel a large window with the same chat. **Shrink** makes it small again. A panel that you make 768 points wide or more also counts as large: ChatGPT then docks its sidebar, and the button shows **Shrink**, which goes back to the default size. The page never shows a half-drawn layout during the change.
 - **Move it from anywhere.** Like ChatGPT's own companion window, you can drag the panel by the title bar or by any empty space: between and beside messages, or in the composer around its text field. Text, messages, answers and controls keep working as usual.
 - **Throw it to the side.** Drag the panel fast and let go while you move, and the panel flies to the left or right edge of the screen, like ChatGPT's own companion window. A slow drag, or a drag that stops before you let go, moves the panel only as far as the pointer.
 - **Temporary chats.** One click starts a chat that does not go into your history. The icon fills while a temporary chat is on.
@@ -114,7 +114,8 @@ To start Quick Chat at login: **System Settings → General → Login Items → 
 | ⌘N | New chat, without a page reload |
 | ⌘B | Show or hide the sidebar |
 | ↑ ↓, Return or Space | In the sidebar: select a conversation, then open it. They work while the sidebar of a small panel is open, and after a click in a docked sidebar until you type or click in another place. |
-| ⌘F | Expand to a large window, or shrink back |
+| ⌘F | Find text on the page. Return or ⌘G shows the next match, ⇧Return or ⇧⌘G the previous match. Esc closes the find bar. |
+| ⌃⌘F | Expand to a large window, or shrink back (change it with **Change Shortcut…** in the menu) |
 | ⌘O | Reset the panel to its default size (440 × 540) |
 | ⌘K | Search your chats (ChatGPT) |
 | ⌘U | Attach files (ChatGPT) |
@@ -122,14 +123,18 @@ To start Quick Chat at login: **System Settings → General → Login Items → 
 
 The ChatGPT shortcuts come from chatgpt.com. They all work in the panel.
 
+### Find
+
+Press ⌘F to find text on the page. The find bar shows below the title bar, and it marks all matches while you type. The current match is orange, and the page scrolls to it. The bar shows the number of matches, for example "2 of 7". The search ignores upper and lower case, and it finds only text that shows on the page. When ChatGPT writes an answer, the count changes with it. Esc closes the bar and removes the marks. The next ⌘F shows the same text again.
+
 ### The title bar
 
-In the small panel, the title bar shows while the pointer is over the panel, and all its buttons fade in and out together. In a large panel (expanded, or 768 points wide or more), it always shows.
+In the small panel, the title bar shows while the pointer is over the panel, and all its buttons show at once and fade out together. In a large panel (expanded, or 768 points wide or more), it always shows.
 
 | Place | Button | Action |
 | --- | --- | --- |
 | Top left | Sidebar | Opens ChatGPT's sidebar with your chats and projects (same as ⌘B). |
-| Top left | Expand / Shrink | Makes the panel a large window with the same chat, or small again (same as ⌘F). |
+| Top left | Expand / Shrink | Makes the panel a large window with the same chat, or small again (same as ⌃⌘F). |
 | Top right | Temporary Chat | Starts or ends a temporary chat (in an empty chat). |
 | Top right | New Chat | Starts a new chat (in a conversation, same as ⌘N). |
 | Top right | Close | Closes the panel (same as Esc). |

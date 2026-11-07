@@ -26,6 +26,9 @@ final class QuickChatController: NSObject {
     private var panel: QuickChatPanel?
     private var webView: WKWebView?
     private var headerButtons: HeaderButtons?
+    private var findBar: FindBar?
+    /// Counts the searches, so only the result of the newest search shows.
+    private var findRequest = 0
     private var loadingView: LoadingView?
     private var pointerWatcher: PointerWatcher?
     /// The title bar shows while the pointer is over the panel, and for a moment after it leaves.
@@ -59,7 +62,10 @@ final class QuickChatController: NSObject {
 
     /// Local shortcut (only while the panel is key) that toggles maximize.
     var maximizeShortcut = Shortcut.loadMaximize() {
-        didSet { panel?.maximizeShortcut = maximizeShortcut }
+        didSet {
+            panel?.maximizeShortcut = maximizeShortcut
+            headerButtons?.expandShortcut = maximizeShortcut.displayString
+        }
     }
 
     /// Resizes the panel back to `QuickChatPanel.defaultSize` (no-op if it was never built).
@@ -105,6 +111,7 @@ final class QuickChatController: NSObject {
     /// usually stays active, as the panel does not activate Quick Chat; only a file dialog does.
     func hide(restoreFocus: Bool) {
         guard let panel, panel.isVisible else { return }
+        closeFind(focusPage: false)
         panel.orderOut(nil)
         if restoreFocus && NSApp.isActive { previousApp?.activate() }
     }
@@ -117,6 +124,7 @@ final class QuickChatController: NSObject {
         panel = nil
         webView = nil
         headerButtons = nil
+        findBar = nil
         loadingView = nil
         pointerWatcher = nil
         hideTitleBar?.cancel()
@@ -148,6 +156,8 @@ final class QuickChatController: NSObject {
         panel.onCancel = { [weak self] in self?.hide(restoreFocus: true) }
         panel.onNewConversation = { [weak self] in self?.newConversation() }
         panel.onToggleSidebar = { [weak self] in self?.toggleSidebar() }
+        panel.onFind = { [weak self] in self?.showFind() }
+        panel.onFindNext = { [weak self] backwards in self?.findNext(backwards: backwards) }
         panel.onMaximizedChange = { [weak self] _ in self?.updateLargeState() }
         panel.waitForContent = { [weak self] width in await self?.waitForPageLayout(width: width) }
         panel.resetSizeShortcut = resetSizeShortcut
@@ -166,16 +176,23 @@ final class QuickChatController: NSObject {
         self.pointerWatcher = pointerWatcher
         let webView = makeWebView()
         webView.configuration.userContentController.add(PageMessageHandler(self), name: "quickChat")
+        webView.configuration.userContentController.add(PageMessageHandler(self), contentWorld: PageFind.world,
+                                                         name: PageFind.messageName)
         let headerButtons = HeaderButtons()
         headerButtons.onClose = { [weak self] in self?.hide(restoreFocus: true) }
         headerButtons.onSidebar = { [weak self] in self?.toggleSidebar() }
         headerButtons.onExpand = { [weak self] in self?.panel?.expandOrShrink() }
         headerButtons.onTemporaryChat = { [weak self] in self?.toggleTemporaryChat() }
         headerButtons.onNewChat = { [weak self] in self?.newConversation() }
+        headerButtons.expandShortcut = maximizeShortcut.displayString
+        let findBar = FindBar()
+        findBar.onSearch = { [weak self] text in self?.find(text) }
+        findBar.onStep = { [weak self] backwards in self?.findNext(backwards: backwards) }
+        findBar.onClose = { [weak self] in self?.closeFind(focusPage: true) }
         let loadingView = LoadingView()
         let cover = ResizeCover()
         panel.cover = cover
-        for view in [webView, cover, loadingView, headerButtons] {
+        for view in [webView, cover, loadingView, headerButtons, findBar] {
             view.translatesAutoresizingMaskIntoConstraints = false
             background.addSubview(view)
         }
@@ -195,7 +212,15 @@ final class QuickChatController: NSObject {
             headerButtons.leadingAnchor.constraint(equalTo: background.leadingAnchor),
             headerButtons.trailingAnchor.constraint(equalTo: background.trailingAnchor),
             headerButtons.topAnchor.constraint(equalTo: background.topAnchor),
+            findBar.topAnchor.constraint(equalTo: background.topAnchor, constant: Self.findBarTop),
+            findBar.trailingAnchor.constraint(equalTo: background.trailingAnchor, constant: -CGFloat(QuickChatPageStyle.composerInset)),
+            findBar.leadingAnchor.constraint(greaterThanOrEqualTo: background.leadingAnchor,
+                                             constant: CGFloat(QuickChatPageStyle.composerInset)),
         ])
+        // 300 points wide, but the bar fits in a narrow panel.
+        let findBarWidth = findBar.widthAnchor.constraint(equalToConstant: 300)
+        findBarWidth.priority = .defaultHigh
+        findBarWidth.isActive = true
         panel.contentView = background
 
         restoreSize(of: panel)
@@ -203,6 +228,7 @@ final class QuickChatController: NSObject {
         self.panel = panel
         self.webView = webView
         self.headerButtons = headerButtons
+        self.findBar = findBar
         self.loadingView = loadingView
         systemAppearanceObservation = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
             MainActor.assumeIsolated { self?.updateAppearance() }
@@ -258,6 +284,8 @@ final class QuickChatController: NSObject {
                                                                 injectionTime: .atDocumentStart, forMainFrameOnly: true))
         config.userContentController.addUserScript(WKUserScript(source: QuickChatPageStyle.sandboxFrameScript,
                                                                 injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        config.userContentController.addUserScript(WKUserScript(source: PageFind.script, injectionTime: .atDocumentStart,
+                                                                forMainFrameOnly: true, in: PageFind.world))
         if Self.startsClean {
             config.userContentController.addUserScript(WKUserScript(source: QuickChatPageStyle.clearDraftsScript,
                                                                     injectionTime: .atDocumentStart, forMainFrameOnly: true))
@@ -345,7 +373,10 @@ final class QuickChatController: NSObject {
         case "zoom":
             panel?.expandOrShrink()
         case "escape":
-            hide(restoreFocus: true)
+            // Esc closes the find bar first.
+            if findBar?.isHidden == false { closeFind(focusPage: true) } else { hide(restoreFocus: true) }
+        case "findResult":
+            if findBar?.isHidden == false { findBar?.show(message) }
         case "safeMode":
             // The page style hid the composer or the messages, so it turned itself off for this
             // page (ChatGPT changed its page). The daily page check reports the broken hooks.
@@ -468,6 +499,55 @@ final class QuickChatController: NSObject {
         if let up = panel.trackDrag() { webView.mouseUp(with: up) }
     }
 
+    // MARK: Find
+
+    /// The find bar sits below the title bar.
+    private static let findBarTop = CGFloat(QuickChatPageStyle.composerInset * 2 + QuickChatPageStyle.titleBarButtonSize)
+    /// The page shows a match below the find bar.
+    private static let findInset = findBarTop + FindBar.height + 8
+
+    /// ⌘F: shows the find bar and selects its text. A search for that text starts again.
+    private func showFind() {
+        guard let panel, let findBar else { return }
+        let wasHidden = findBar.isHidden
+        findBar.isHidden = false
+        panel.makeFirstResponder(findBar.field)
+        findBar.field.selectText(nil)
+        if wasHidden { find(findBar.text) }
+    }
+
+    private func find(_ text: String) {
+        runFind("return globalThis.quickChatFind?.find(text, inset) ?? null", arguments: ["text": text])
+    }
+
+    /// ⌘G or ⇧⌘G: the next or the previous match. While the find bar is closed, it opens it.
+    private func findNext(backwards: Bool) {
+        guard let findBar else { return }
+        if findBar.isHidden { return showFind() }
+        runFind("return globalThis.quickChatFind?.step(backwards, inset) ?? null", arguments: ["backwards": backwards])
+    }
+
+    private func runFind(_ script: String, arguments: [String: Any]) {
+        guard let webView else { return }
+        findRequest += 1
+        let request = findRequest
+        webView.callAsyncJavaScript(script, arguments: arguments.merging(["inset": Double(Self.findInset)]) { $1 },
+                                    in: nil, in: PageFind.world) { [weak self] result in
+            guard let self, request == self.findRequest, self.findBar?.isHidden == false else { return }
+            self.findBar?.show(try? result.get() as? [String: Any])
+        }
+    }
+
+    /// Closes the find bar and removes the marks from the page. The bar keeps its text for the
+    /// next ⌘F. `focusPage`: the page gets the keyboard focus again.
+    private func closeFind(focusPage: Bool) {
+        guard let findBar, !findBar.isHidden else { return }
+        findBar.isHidden = true
+        findRequest += 1
+        webView?.callAsyncJavaScript("globalThis.quickChatFind?.clear()", arguments: [:], in: nil, in: PageFind.world)
+        if focusPage, let webView { panel?.makeFirstResponder(webView) }
+    }
+
     private func focusComposer() {
         webView?.evaluateJavaScript(QuickChatPageStyle.focusComposerScript)
     }
@@ -571,6 +651,8 @@ extension QuickChatController: WKUIDelegate, WKNavigationDelegate, WKDownloadDel
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         focusComposer()
+        // A new document has no marks: the open find bar searches it again.
+        if let findBar, !findBar.isHidden { find(findBar.text) }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

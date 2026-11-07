@@ -29,10 +29,11 @@ final class HeaderButtons: NSView {
     var isExpanded = false {
         didSet {
             expand.showsOtherImage = isExpanded
-            expand.toolTip = isExpanded ? "Shrink (⌘F)" : "Expand (⌘F)"
-            expand.setAccessibilityLabel(expand.toolTip)
+            updateExpandLabel()
         }
     }
+    /// The keyboard shortcut of Expand and Shrink, for the tooltip.
+    var expandShortcut = Shortcut.controlCommandF.displayString { didSet { updateExpandLabel() } }
 
     private(set) var sidebar: HeaderButton!
     private(set) var temporaryChat: HeaderButton!
@@ -50,7 +51,7 @@ final class HeaderButtons: NSView {
         temporaryChat = HeaderButton(image: Self.temporaryChatImage, activeImage: Self.temporaryChatOnImage, label: "Temporary Chat") { [weak self] in self?.onTemporaryChat?() }
         newChat = HeaderButton(image: Self.newChatImage, label: "New Chat (⌘N)") { [weak self] in self?.onNewChat?() }
         expand = HeaderButton(image: Self.expandImage, activeImage: Self.symbol("arrow.down.right.and.arrow.up.left"),
-                              label: "Expand (⌘F)") { [weak self] in self?.onExpand?() }
+                              label: "Expand") { [weak self] in self?.onExpand?() }
         close = HeaderButton(image: Self.closeImage, label: "Close Quick Chat (Esc)") { [weak self] in self?.onClose?() }
         for (stack, buttons) in [(leadingButtons, [sidebar!, expand!]), (trailingButtons, [temporaryChat!, newChat!, close!])] {
             stack.orientation = .horizontal
@@ -71,6 +72,12 @@ final class HeaderButtons: NSView {
             heightAnchor.constraint(equalToConstant: CGFloat(QuickChatPageStyle.titleBarButtonSize) + inset * 2),
         ])
         update(for: nil)
+        updateExpandLabel()
+    }
+
+    private func updateExpandLabel() {
+        expand.toolTip = "\(isExpanded ? "Shrink" : "Expand") (\(expandShortcut))"
+        expand.setAccessibilityLabel(expand.toolTip)
     }
 
     @available(*, unavailable)

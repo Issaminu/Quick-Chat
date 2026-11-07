@@ -40,5 +40,10 @@ jobs:
           swiftc -swift-version 6 Sources/QuickChat/Features/QuickChat/QuickChatPageStyle.swift Sources/QuickChat/Features/QuickChat/PageHooks.swift scripts/check-page-style.swift -o "$RUNNER_TEMP/page-style-check"
           "$RUNNER_TEMP/page-style-check"
 
+      - name: Find check
+        run: |
+          swiftc -swift-version 6 -parse-as-library Sources/QuickChat/Features/QuickChat/PageFind.swift scripts/check-page-find.swift -o "$RUNNER_TEMP/page-find-check"
+          "$RUNNER_TEMP/page-find-check"
+
       - name: Panel check
         run: python3 scripts/check-panel.py

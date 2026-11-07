@@ -10,6 +10,10 @@ final class QuickChatPanel: NSPanel {
     var onNewConversation: (() -> Void)?
     /// ⌘B: opens or closes the page's sidebar.
     var onToggleSidebar: (() -> Void)?
+    /// ⌘F: opens the find bar.
+    var onFind: (() -> Void)?
+    /// ⌘G and ⇧⌘G: the next or the previous match (`true`: the previous match).
+    var onFindNext: ((Bool) -> Void)?
     /// Called when the panel becomes large (maximized) or goes back to its own frame.
     var onMaximizedChange: ((Bool) -> Void)?
     /// Covers the content while the panel changes its size (the controller adds it).
@@ -18,8 +22,8 @@ final class QuickChatPanel: NSPanel {
     var waitForContent: ((CGFloat) async -> Void)?
     /// Local key combo that calls `resetSize()` while the panel is key (default ⌘O).
     var resetSizeShortcut: Shortcut? = .commandO
-    /// Local key combo that calls `expandOrShrink()` while the panel is key (default ⌘F).
-    var maximizeShortcut: Shortcut? = .commandF
+    /// Local key combo that calls `expandOrShrink()` while the panel is key (default ⌃⌘F).
+    var maximizeShortcut: Shortcut? = .controlCommandF
 
     /// The user's frame from before maximizing; non-nil while maximized. Hiding and showing
     /// keep the panel maximized; a relaunch doesn't, as the maximized frame is never autosaved.
@@ -67,7 +71,7 @@ final class QuickChatPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
-    /// Window ▸ Zoom does the same as Expand, a double-click on the title bar, and ⌘F.
+    /// Window ▸ Zoom does the same as Expand, a double-click on the title bar, and ⌃⌘F.
     override func zoom(_ sender: Any?) { expandOrShrink() }
 
     /// Expand or Shrink: a small panel fills the screen, and a maximized panel goes back to its
@@ -189,11 +193,23 @@ final class QuickChatPanel: NSPanel {
         if isMaximized, !isSettingFrame { endMaximize() }
     }
 
-    /// Runs the Reset Window Size or Maximize action if `event` is its shortcut. Key repeats
+    /// Runs Find, New Chat, Sidebar, Reset Window Size or Maximize if `event` is its shortcut. Key repeats
     /// are swallowed, so holding the shortcut doesn't toggle maximize over and over.
     private func handleLocalShortcut(_ event: NSEvent) -> Bool {
-        if event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command {
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        if modifiers == [.command, .shift], event.charactersIgnoringModifiers?.lowercased() == "g" {
+            if !event.isARepeat { onFindNext?(true) }
+            return true
+        }
+        if modifiers == .command {
             switch event.charactersIgnoringModifiers?.lowercased() {
+            case "f":
+                if !event.isARepeat { onFind?() }
+                return true
+            case "g":
+                // Held down, it goes through the matches, as in Safari.
+                onFindNext?(false)
+                return true
             case "n":
                 if !event.isARepeat { onNewConversation?() }
                 return true

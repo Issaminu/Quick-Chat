@@ -12,7 +12,10 @@ struct Shortcut: Codable, Equatable {
     static let optionSpace = Shortcut(keyCode: UInt32(kVK_Space), carbonModifiers: UInt32(optionKey))
     /// Default local shortcut for resetting the Quick Chat panel's size.
     static let commandO = Shortcut(keyCode: UInt32(kVK_ANSI_O), carbonModifiers: UInt32(cmdKey), keyLabel: "O")
-    /// Default local shortcut for maximizing / restoring the Quick Chat panel.
+    /// Default local shortcut for maximizing / restoring the Quick Chat panel. It is the macOS
+    /// shortcut for full screen. ⌘F is Find.
+    static let controlCommandF = Shortcut(keyCode: UInt32(kVK_ANSI_F), carbonModifiers: UInt32(cmdKey | controlKey), keyLabel: "F")
+    /// Find. Before Find, it was the default shortcut for maximizing the panel.
     static let commandF = Shortcut(keyCode: UInt32(kVK_ANSI_F), carbonModifiers: UInt32(cmdKey), keyLabel: "F")
 
     init(keyCode: UInt32, carbonModifiers: UInt32, keyLabel: String? = nil) {
@@ -163,7 +166,11 @@ struct Shortcut: Codable, Equatable {
     func saveAsResetSize() { save(key: Self.resetSizeDefaultsKey) }
 
     /// The Maximize / Restore Size shortcut (works only while the Quick Chat panel is focused).
-    static func loadMaximize() -> Shortcut { load(key: maximizeDefaultsKey, fallback: .commandF) }
+    /// A saved ⌘F (the default before Find) changes to the new default.
+    static func loadMaximize() -> Shortcut {
+        let shortcut = load(key: maximizeDefaultsKey, fallback: .controlCommandF)
+        return shortcut == .commandF ? .controlCommandF : shortcut
+    }
     func saveAsMaximize() { save(key: Self.maximizeDefaultsKey) }
 
     private static func load(key: String, fallback: Shortcut) -> Shortcut {
