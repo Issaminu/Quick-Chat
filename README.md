@@ -113,7 +113,7 @@ To start Quick Chat at login: **System Settings → General → Login Items → 
 | Esc or ⌘W | Close the panel. While a menu, a dialog or the sidebar is open, Esc closes that first. |
 | ⌘N | New chat, without a page reload |
 | ⌘B | Show or hide the sidebar |
-| ↑ ↓, Return | In the sidebar: select a conversation, then open it. They work while the sidebar of a small panel is open, and after a click in a docked sidebar until you type or click in another place. |
+| ↑ ↓, Return or Space | In the sidebar: select a conversation, then open it. They work while the sidebar of a small panel is open, and after a click in a docked sidebar until you type or click in another place. |
 | ⌘F | Expand to a large window, or shrink back |
 | ⌘O | Reset the panel to its default size (440 × 540) |
 | ⌘K | Search your chats (ChatGPT) |

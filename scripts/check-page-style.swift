@@ -294,8 +294,11 @@ enum PageStyleCheck {
             result['the selected row has the hover color'] = document.adoptedStyleSheets.flatMap(s => [...s.cssRules]).some(r =>
                 r.selectorText?.includes('[data-sidebar-cycle-item]:has(a[data-interactive-row-link]:focus)') &&
                 r.style.backgroundColor.includes('--color-background-secondary-ghost-hover'));
+            result['Space opens the selected conversation'] = key(' ') && location.hash === '#one' && focused() === 0;
+            history.replaceState(null, '', location.pathname);
             key('a');
             document.activeElement?.blur?.();
+            result['Space in another place stays with the page'] = !key(' ');
             result['after typing, the arrows stay with the page'] = !key('ArrowDown') && focused() === -1;
             nav.remove();
             return result;

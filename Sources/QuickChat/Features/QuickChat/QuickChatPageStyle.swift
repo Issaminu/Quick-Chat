@@ -417,8 +417,8 @@ enum QuickChatPageStyle {
 
             // ↑ and ↓ move through the sidebar's conversations: while the small panel's sidebar is
             // open, while the sidebar has the focus, and after a press in the sidebar until a press
-            // in another place or typing. The move starts at the open conversation. Return
-            // opens the selected conversation (the page's own link does that).
+            // in another place or typing. The move starts at the open conversation. Return (the
+            // page's own link) or Space opens the selected conversation.
             const sidebarRoot = "[data-sidebar-navigation-root]";
             const sidebarRows = "[data-sidebar-cycle-item] a[data-interactive-row-link]";
             let sidebarKeys = false;
@@ -427,6 +427,14 @@ enum QuickChatPageStyle {
             }, true);
             window.addEventListener("keydown", event => {
                 if (event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return;
+                // Space opens the selected conversation, as Return does (a link takes only Return).
+                const selected = document.activeElement;
+                if (event.key === " " && !event.shiftKey && selected?.matches?.(`${sidebarRoot} ${sidebarRows}`)) {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    if (!event.repeat) selected.click();
+                    return;
+                }
                 if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
                     if (event.key.length === 1 || event.key === "Backspace" || event.key === "Delete") sidebarKeys = false;
                     return;
