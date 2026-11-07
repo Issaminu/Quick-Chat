@@ -93,6 +93,11 @@ enum QuickChatPageStyle {
             & header[data-app-shell-titlebar] { pointer-events: auto !important; cursor: default !important; }
         }
         header[data-app-shell-titlebar] .bg-surface { background-color: transparent !important; }
+        /* The sidebar row that the arrow keys selected (the page script focuses its link) looks like
+           a row under the pointer. A press does not focus a link, so only keys show this. */
+        [data-sidebar-cycle-item]:has(a[data-interactive-row-link]:focus) {
+            background-color: var(--color-background-secondary-ghost-hover) !important;
+        }
         /* The title bar shows only while the pointer is over the panel (the panel sets
            data-quick-chat-pointer). It shows at once. It hides with a fade, together with the
            panel's buttons (same duration and curve): other pages' title bars fade with it, and
@@ -217,8 +222,11 @@ enum QuickChatPageStyle {
            (after Tab; the page script sets data-quick-chat-keyboard). A click, a button of the
            panel that presses a page button, or a menu that gives the focus back to its button
            (after Esc) shows none. The page draws rings as outlines, and as box shadows through
-           Tailwind's ring variables; the element's other shadows stay. */
-        html:not([data-quick-chat-keyboard]) :is(:focus-visible, :focus-visible::before, :focus-visible::after,
+           Tailwind's ring variables; the element's other shadows stay. Some draw the outline on
+           ::before or ::after (sidebar rows); :is() cannot hold those, so they have their own rule. */
+        html:not([data-quick-chat-keyboard]) :focus-visible::before,
+        html:not([data-quick-chat-keyboard]) :focus-visible::after { outline: none !important; }
+        html:not([data-quick-chat-keyboard]) :is(:focus-visible,
             :is(button, a, summary, select, [role="button"], [role="link"], [role="tab"], [role="switch"], [role="checkbox"], [role="radio"], [role="combobox"], [role="menuitem"], [role="option"]):focus) {
             outline: none !important;
             --tw-ring-shadow: 0 0 #0000 !important;
@@ -406,6 +414,44 @@ enum QuickChatPageStyle {
             };
             window.addEventListener("keydown", event => { if (event.key === "Tab") root.dataset.quickChatKeyboard = ""; }, true);
             window.addEventListener("pointerdown", () => { delete root.dataset.quickChatKeyboard; }, true);
+
+            // ↑ and ↓ move through the sidebar's conversations: while the small panel's sidebar is
+            // open, while the sidebar has the focus, and after a press in the sidebar until a press
+            // in another place or typing. The move starts at the open conversation. Return
+            // opens the selected conversation (the page's own link does that).
+            const sidebarRoot = "[data-sidebar-navigation-root]";
+            const sidebarRows = "[data-sidebar-cycle-item] a[data-interactive-row-link]";
+            let sidebarKeys = false;
+            window.addEventListener("pointerdown", event => {
+                sidebarKeys = event.target instanceof Element && !!event.target.closest(sidebarRoot);
+            }, true);
+            window.addEventListener("keydown", event => {
+                if (event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return;
+                if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
+                    if (event.key.length === 1 || event.key === "Backspace" || event.key === "Delete") sidebarKeys = false;
+                    return;
+                }
+                const root = [...document.querySelectorAll(sidebarRoot)].find(element => element.getClientRects().length);
+                const active = document.activeElement;
+                if (event.shiftKey || !root || active?.closest('[role="menu"], [role="listbox"]')) return;
+                // The small panel's sidebar is a dialog over the chat: while it is open, the arrows
+                // are for the sidebar, wherever the focus is (except in its search field).
+                const dialog = root.closest('[role="dialog"]');
+                const typing = !!active?.closest('input, textarea, [contenteditable="true"]');
+                const inSidebar = dialog ? !(typing && dialog.contains(active)) : !!active && root.contains(active) && !typing;
+                if (!inSidebar && !sidebarKeys) return;
+                const links = [...root.querySelectorAll(sidebarRows)].filter(link => link.getClientRects().length);
+                if (!links.length) return;
+                let index = links.findIndex(link => link === active || (active !== root && link.closest("[data-sidebar-cycle-item]").contains(active)));
+                if (index < 0) index = links.findIndex(link => link.closest('[data-sidebar-cycle-item][aria-current="page"]'));
+                const down = event.key === "ArrowDown";
+                const next = index < 0 ? (down ? 0 : links.length - 1) : Math.min(links.length - 1, Math.max(0, index + (down ? 1 : -1)));
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                sidebarKeys = true;
+                links[next].focus({ preventScroll: true });
+                links[next].scrollIntoView({ block: "nearest" });
+            }, true);
 
             // Esc hides the panel. The composer always claims Esc, so the page does not pass it on.
             // While a menu, a dialog, a popup, or the sidebar is open, Esc closes that instead.

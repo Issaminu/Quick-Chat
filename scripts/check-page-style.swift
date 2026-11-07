@@ -262,7 +262,7 @@ enum PageStyleCheck {
         let rings = try await web.evaluateJavaScript("""
             (() => {
                 const rule = document.adoptedStyleSheets.flatMap(s => [...s.cssRules])
-                    .find(r => r.selectorText?.includes(':not([data-quick-chat-keyboard])') && r.selectorText.includes(':focus-visible'));
+                    .find(r => r.selectorText?.includes(':not([data-quick-chat-keyboard])') && r.selectorText.includes(':focus-visible') && r.selectorText.includes('button'));
                 if (!rule) return false;
                 const none = name => rule.style.getPropertyValue(name).replace(/\\s+/g, ' ').trim() === '0 0 #0000' && rule.style.getPropertyPriority(name) === 'important';
                 return rule.style.outlineStyle === 'none' && none('--tw-ring-shadow') && none('--tw-ring-offset-shadow') &&
@@ -271,6 +271,46 @@ enum PageStyleCheck {
             """) as? Bool == true
         print("\(rings ? "PASS" : "FAIL") focus rings: outside keyboard mode, no outline and no ring shadow on focused controls")
         if !rings { failures += 1 }
+        // The sidebar's arrow keys, on a sidebar that the check adds for a moment (docked: no dialog).
+        let sidebarKeys = try await web.callAsyncJavaScript("""
+            const nav = document.createElement('nav');
+            nav.style.cssText = 'position:fixed; left:0; top:60px; width:200px; z-index:5';
+            nav.innerHTML = `<div data-sidebar-navigation-root>
+                <div data-sidebar-cycle-item role="group"><a data-interactive-row-link href="#one">One</a></div>
+                <div data-sidebar-cycle-item role="group" aria-current="page"><a data-interactive-row-link href="#two">Two</a></div>
+                <div data-sidebar-cycle-item role="group"><a data-interactive-row-link href="#three">Three</a></div></div>`;
+            document.body.append(nav);
+            const links = [...nav.querySelectorAll('a')];
+            const key = name => { const event = new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }); (document.activeElement ?? document.body).dispatchEvent(event); return event.defaultPrevented; };
+            const focused = () => links.indexOf(document.activeElement);
+            const result = {};
+            document.activeElement?.blur?.();
+            result['without a press in the sidebar, the arrows stay with the page'] = !key('ArrowDown') && focused() === -1;
+            nav.querySelector('[data-sidebar-navigation-root]').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+            result['after a press in the sidebar, ↓ selects the row after the open conversation'] = key('ArrowDown') && focused() === 2;
+            result['↓ stays on the last row'] = key('ArrowDown') && focused() === 2;
+            result['↑ moves up'] = key('ArrowUp') && key('ArrowUp') && focused() === 0;
+            // The check window is not the key window, so :focus does not match here: read the rule.
+            result['the selected row has the hover color'] = document.adoptedStyleSheets.flatMap(s => [...s.cssRules]).some(r =>
+                r.selectorText?.includes('[data-sidebar-cycle-item]:has(a[data-interactive-row-link]:focus)') &&
+                r.style.backgroundColor.includes('--color-background-secondary-ghost-hover'));
+            key('a');
+            document.activeElement?.blur?.();
+            result['after typing, the arrows stay with the page'] = !key('ArrowDown') && focused() === -1;
+            nav.remove();
+            return result;
+            """, arguments: [:], in: nil, contentWorld: .page) as? [String: Bool] ?? [:]
+        for (name, pass) in sidebarKeys.sorted(by: { $0.key < $1.key }) {
+            print("\(pass ? "PASS" : "FAIL") sidebar keys: \(name)")
+            if !pass { failures += 1 }
+        }
+        if sidebarKeys.isEmpty { print("FAIL sidebar keys: the check did not run"); failures += 1 }
+        let pseudoRings = try await web.evaluateJavaScript("""
+            document.adoptedStyleSheets.flatMap(s => [...s.cssRules]).some(r => r.style?.outlineStyle === 'none' &&
+                ['::before', '::after'].every(p => r.selectorText?.split(',').some(part => part.trim() === 'html:not([data-quick-chat-keyboard]) :focus-visible' + p)))
+            """) as? Bool == true
+        print("\(pseudoRings ? "PASS" : "FAIL") focus rings: outside keyboard mode, no outline on ::before or ::after of a focused element (sidebar rows)")
+        if !pseudoRings { failures += 1 }
 
         // Light mode: the primary button turns black with a white icon.
         let lightButton = try await web.evaluateJavaScript("""

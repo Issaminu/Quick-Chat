@@ -97,6 +97,16 @@ enum PageHooks {
              usedFor: "⌘B in a wide panel (ChatGPT's own sidebar shortcut, ⌘⇧S).",
              ifBroken: "⌘B does nothing in a wide panel."),
 
+        // The sidebar
+        Hook(id: "sidebar-rows", pages: [.conversation],
+             check: #"await (async () => { toggleSidebar(); await sleep(900); const root = rendered("[data-sidebar-navigation-root]"); const links = root ? [...root.querySelectorAll("[data-sidebar-cycle-item] a[data-interactive-row-link]")].filter(e => e.getClientRects().length) : []; const current = links.some(a => a.getAttribute("href") === location.pathname && a.closest('[data-sidebar-cycle-item][aria-current="page"]')); toggleSidebar(); await sleep(900); return links.length > 0 && current; })()"#,
+             usedFor: "↑ and ↓ move through the sidebar's conversations, from the open conversation.",
+             ifBroken: "The arrow keys do not move through the sidebar's conversations."),
+        Hook(id: "sidebar-row-color", pages: [.home],
+             check: #"await uses("--color-background-secondary-ghost-hover")"#,
+             usedFor: "The sidebar row that the arrow keys selected looks like a row under the pointer.",
+             ifBroken: "The selected sidebar row has no background."),
+
         // The composer
         Hook(id: "composer", pages: [.home, .conversation],
              check: #"has("form[data-chatgpt-composer]")"#,
