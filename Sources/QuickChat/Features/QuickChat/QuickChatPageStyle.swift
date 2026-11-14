@@ -17,6 +17,32 @@ enum QuickChatPageStyle {
             .find(element => element.getClientRects().length > 0)?.focus()
         """
 
+    /// Turns off macOS autocorrect, auto-capitalization and inline predictions in the composer.
+    /// Their suggestion bubble takes the keys while it shows, also ⌥Space, so the panel's
+    /// shortcut stops working. Spell-check underlines stay. The page renders the composer again
+    /// at times, so the script sets the attributes again after page changes (at most once per
+    /// frame).
+    static let noAutocorrectScript = """
+        (() => {
+            const apply = () => {
+                pending = false;
+                for (const element of document.querySelectorAll('#prompt-textarea, [contenteditable="true"], textarea')) {
+                    if (element.getAttribute('autocorrect') === 'off') continue;
+                    element.setAttribute('autocorrect', 'off');
+                    element.setAttribute('autocapitalize', 'off');
+                    element.setAttribute('writingsuggestions', 'false');
+                }
+            };
+            let pending = false;
+            new MutationObserver(() => {
+                if (pending) return;
+                pending = true;
+                requestAnimationFrame(apply);
+            }).observe(document, { childList: true, subtree: true });
+            apply();
+        })();
+        """
+
     /// The panel's buttons press the page's own controls. Each script runs in its own function
     /// scope: every call runs in the page's global scope, where a second top-level `const` with
     /// the same name fails. The daily page check (scripts/check-page-hooks.swift) runs them too.

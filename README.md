@@ -46,12 +46,17 @@ The new ChatGPT desktop app (Chat, Work and Codex) works differently:
 
 This is important because the two kinds of use have different limits. Work and Codex share one usage allowance, with a 5-hour window and a weekly limit. Chat has its own model availability and message limits ([OpenAI: Managing usage in Work and Codex](https://help.openai.com/en/articles/20001516)). A quick question through Mini uses the agent allowance that you may want to keep for real tasks.
 
-ChatGPT Classic is also falling behind:
+ChatGPT Classic is also going away:
 
+- **It retires on January 30, 2027**, per OpenAI's notice in the app. After that, the ⌥Space chat bar has no official replacement.
 - **New features skip it.** OpenAI says that new features may come only to the new app ([OpenAI: Moving to the new ChatGPT desktop app](https://help.openai.com/en/articles/20001276)).
 - **It cannot show Intelligent UI**, the GPT-6 answers that mix text, visuals and interactive elements. OpenAI tells you to use ChatGPT on the web for them ([OpenAI: GPT-6 and other models in ChatGPT](https://help.openai.com/en/articles/20001354-gpt-6-and-other-models-in-chatgpt)).
 
-Quick Chat shows chatgpt.com in a small floating panel. So you keep the ⌥Space chat bar, and every message is a regular ChatGPT chat with all web features.
+Quick Chat shows chatgpt.com in a small floating panel. So you keep the ⌥Space chat bar after Classic retires, and every message is a regular ChatGPT chat with all web features.
+
+#### Announced, not live yet (November 2026)
+
+OpenAI told users (by email) that it plans to combine Chat and Work, and to replace the separate limits with one allowance that ChatGPT and Codex share. Instant answers will not count against it. Neither change has a date yet. When the shared allowance is live, only Instant answers in Quick Chat stay off it, and the main value of Quick Chat becomes ⌥Space for a plain chat.
 
 Quick Chat works next to the new ChatGPT desktop app, and it can free ⌥Space from the Mini shortcut. It does not need any ChatGPT app: without one, it works alone.
 
@@ -112,6 +117,7 @@ To start Quick Chat at login: **System Settings → General → Login Items → 
 | ⌥Space | Open or close the panel (change it with **Change Shortcut…** in the menu) |
 | Esc or ⌘W | Close the panel. While a menu, a dialog or the sidebar is open, Esc closes that first. |
 | ⌘N | New chat, without a page reload |
+| ⌘[ and ⌘] | Back and forward, as in a browser. If a sign-in page took you to another site, the panel goes back to the chat when you open it again after 5 minutes or more. |
 | ⌘B | Show or hide the sidebar |
 | ↑ ↓, Return or Space | In the sidebar: select a conversation, then open it. They work while the sidebar of a small panel is open, and after a click in a docked sidebar until you type or click in another place. |
 | ⌘F | Find text on the page. Return or ⌘G shows the next match, ⇧Return or ⇧⌘G the previous match. Esc closes the find bar. |
@@ -204,7 +210,8 @@ If you build from source with a free Apple Development certificate (Xcode → Se
 - **chatgpt.com can change.** When it changes, a part of the panel's style can fall back to ChatGPT's own look until Quick Chat is updated.
 - **Downloads and dialogs.** Downloads go to ~/Downloads and show in Finder. Some cases can fail, such as the right-click "Download Image" item. `alert()` and `confirm()` dialogs from the site do not show.
 - **It depends on ChatGPT app internals.** The Show Mini command name (`openAvatarOverlay`) is not documented. A ChatGPT update can rename it.
-- **The usage benefit may not last.** If Chat and Work get one shared allowance, Quick Chat is still a fast chat panel, but it saves no agent allowance.
+- **The usage benefit will become smaller** when OpenAI's planned shared allowance is live (see [Announced, not live yet](#announced-not-live-yet-november-2026)). Only Instant answers will stay off it.
+- **Passkeys and security keys do not work in the panel.** macOS allows them only in web browsers. If a sign-in page offers a passkey, choose **Try another way**, and use your password or a code.
 
 ## Development
 
@@ -212,13 +219,14 @@ The checks run on macOS:
 
 ```sh
 python3 scripts/check-panel.py
-swiftc -swift-version 6 Sources/QuickChat/Features/QuickChat/QuickChatPageStyle.swift Sources/QuickChat/Features/QuickChat/PageHooks.swift scripts/check-page-style.swift -o /tmp/quickchat-page-style-check
+swiftc -swift-version 6 Sources/QuickChat/Features/QuickChat/QuickChatPageStyle.swift Sources/QuickChat/Features/QuickChat/PageHooks.swift scripts/PageVisualCheck.swift scripts/check-page-style.swift -o /tmp/quickchat-page-style-check
 /tmp/quickchat-page-style-check
 ```
 
 - `check-panel.py` builds the real panel in an isolated test app with a local page that has the same hooks as chatgpt.com. It checks the buttons, the shortcuts, the title bar, the size changes and the position.
-- `check-page-style.swift` checks the style on a local page: transparency, insets, corners, the message cut and fade, the hidden toolbars and the scroll bar. It also checks safe mode, and that `PageHooks.swift` names every hook that the style uses.
+- `check-page-style.swift` checks the style on a local page: transparency, insets, corners, the message cut and fade, the hidden toolbars and the scroll bar. It also checks safe mode, that `PageHooks.swift` names every hook that the style uses, and that the screen checks of the daily page check find a new title bar button and a band behind the composer.
 - GitHub Actions builds the app and runs `check-page-style.swift` and `check-panel.py` on each push and pull request (`.github/workflows/checks.yml`).
+- To test the keybindings code (it uses only temporary files): `swift build && QUICKCHAT_SELFTEST=keymap .build/debug/QuickChat`.
 - `check-live.py` checks the style on the real chatgpt.com, with your Quick Chat session. It sends no messages. Run it when ChatGPT changes its page, to see which part lost its hook. Quit Quick Chat first.
 
   ```sh

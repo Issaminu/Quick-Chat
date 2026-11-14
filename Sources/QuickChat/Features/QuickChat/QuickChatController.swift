@@ -18,9 +18,12 @@ final class QuickChatController: NSObject {
         }
         return quitNormally
     }()
-    /// Hosts that stay inside the panel (chat + sign-in flows); other links open in the browser.
-    private static let inPanelHosts = ["chatgpt.com", "openai.com", "auth0.com", "google.com", "apple.com",
-                                       "microsoftonline.com", "live.com", "microsoft.com"]
+    /// OpenAI's sign-in hosts (and their subdomains): where sign-in starts from a chatgpt.com page.
+    private static let openAISignInHosts = ["auth.openai.com", "auth0.openai.com"]
+    /// Hidden longer than this while off ChatGPT (for example on a help page reached from a
+    /// sign-in page), the panel goes back to the chat when it shows. A shorter hide keeps a
+    /// sign-in in progress, for example while you copy a code from another app.
+    private static let returnToChatAfter: TimeInterval = 5 * 60
 
     private let log = Log.make("QuickChat")
     private var panel: QuickChatPanel?
@@ -44,6 +47,14 @@ final class QuickChatController: NSObject {
     /// The page's theme, from its last state message.
     private var pageIsDark: Bool?
     private var previousApp: NSRunningApplication?
+    /// When the panel last showed and last lost key, and until when a Space change may not take
+    /// its focus (see `spaceDidChange()`).
+    private var shownAt: Date?
+    private var lostKeyAt: Date?
+    private var keepFocusUntil: Date?
+    /// When the panel was last hidden (see `returnToChatAfter`).
+    private var hiddenAt: Date?
+    private var workspaceObservers: [NSObjectProtocol] = []
     /// The panel showed since the app started; the first show places it at the default position.
     private var hasShown = false
     /// Where each in-flight download is being written, for "reveal in Finder" when it finishes.
@@ -52,8 +63,6 @@ final class QuickChatController: NSObject {
     private var crashReloads: [Date] = []
     /// Set when crash reloads were given up; the page reloads the next time the panel shows.
     private var reloadOnShow = false
-
-    var isVisible: Bool { panel?.isVisible == true }
 
     /// Local shortcut (only while the panel is key) that triggers `resetSize()`.
     var resetSizeShortcut = Shortcut.loadResetSize() {
@@ -68,12 +77,10 @@ final class QuickChatController: NSObject {
         }
     }
 
-    /// Resizes the panel back to `QuickChatPanel.defaultSize` (no-op if it was never built).
-    func resetSize() { panel?.resetSize() }
-
-    /// Hides the panel whenever it's visible (focused or not), otherwise shows it.
+    /// Hides the panel whenever it's visible on the current Space (focused or not), otherwise
+    /// shows it here.
     func toggle() {
-        if let panel, panel.isVisible {
+        if let panel, panel.isVisible, panel.isOnActiveSpace {
             hide(restoreFocus: panel.isKeyWindow)
         } else {
             show()
@@ -90,11 +97,22 @@ final class QuickChatController: NSObject {
         let panel = self.panel ?? makePanel()
         let front = NSWorkspace.shared.frontmostApplication
         if front?.processIdentifier != ProcessInfo.processInfo.processIdentifier { previousApp = front }
-        if reloadOnShow, let webView {
-            reloadOnShow = false
-            crashReloads = []
-            reload(webView)
+        if let webView {
+            // Off ChatGPT after a long hide: back to the chat. This also stands in for a crash retry.
+            let returnToChat = webView.url?.host.map { !Self.isChatGPTHost($0) } == true
+                && hiddenAt.map { Date.now.timeIntervalSince($0) > Self.returnToChatAfter } == true
+            if returnToChat {
+                log.info("Off ChatGPT since the panel was hidden; going back to the chat")
+                webView.load(URLRequest(url: Self.chatURL))
+            } else if reloadOnShow {
+                reload(webView)
+            }
+            if returnToChat || reloadOnShow {
+                reloadOnShow = false
+                crashReloads = []
+            }
         }
+        hiddenAt = nil
         if !hasShown {
             hasShown = true
             placeInitially(panel)
@@ -105,6 +123,58 @@ final class QuickChatController: NSObject {
         // No "entered" event comes when the panel appears under the pointer.
         setPointerInside(panel.frame.contains(NSEvent.mouseLocation), immediately: true)
         focusComposer()
+        shownAt = .now
+    }
+
+    /// A Space change makes macOS activate an app on the new Space (Finder on the desktop, or
+    /// the full-screen app), which takes the keyboard from the panel. This includes a change
+    /// that ends just after the shortcut. If the panel had the focus (or just showed), it takes
+    /// the focus back.
+    private func observeSpaceChanges() {
+        guard workspaceObservers.isEmpty else { return }
+        let center = NSWorkspace.shared.notificationCenter
+        workspaceObservers = [
+            center.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil,
+                               queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.spaceDidChange() }
+            },
+            // The new Space's app can activate just after the Space change notification.
+            center.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil,
+                               queue: .main) { [weak self] note in
+                let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+                MainActor.assumeIsolated {
+                    self?.otherAppActivated(app)
+                    self?.reclaimFocusIfKept()
+                }
+            },
+        ]
+    }
+
+    /// Keeps `previousApp` current while the panel is open, so a hide gives the focus back to
+    /// the app you use now, not to the app from when the panel opened (it can be on another
+    /// Space, and to activate it would go back there).
+    private func otherAppActivated(_ app: NSRunningApplication?) {
+        guard let app, app.processIdentifier != ProcessInfo.processInfo.processIdentifier,
+              panel?.isVisible == true else { return }
+        previousApp = app
+    }
+
+    private func spaceDidChange() {
+        guard let panel, panel.isVisible else { return }
+        let recent = { (date: Date?) in date.map { Date.now.timeIntervalSince($0) < 1 } ?? false }
+        guard panel.isKeyWindow || recent(lostKeyAt) || recent(shownAt) else { return }
+        keepFocusUntil = .now.addingTimeInterval(1)
+        reclaimFocusIfKept()
+    }
+
+    private func reclaimFocusIfKept() {
+        guard let until = keepFocusUntil, Date.now < until,
+              let panel, panel.isVisible, panel.isOnActiveSpace else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let panel = self.panel, panel.isVisible, !panel.isKeyWindow else { return }
+            panel.makeKeyAndOrderFront(nil)
+            panel.makeFirstResponder(self.webView)
+        }
     }
 
     /// `restoreFocus`: give focus back to the app that was frontmost before showing. That app
@@ -112,7 +182,9 @@ final class QuickChatController: NSObject {
     func hide(restoreFocus: Bool) {
         guard let panel, panel.isVisible else { return }
         closeFind(focusPage: false)
+        keepFocusUntil = nil
         panel.orderOut(nil)
+        hiddenAt = .now
         if restoreFocus && NSApp.isActive { previousApp?.activate() }
     }
 
@@ -154,6 +226,13 @@ final class QuickChatController: NSObject {
     private func makePanel() -> QuickChatPanel {
         let panel = QuickChatPanel(contentRect: NSRect(origin: .zero, size: QuickChatPanel.defaultSize))
         panel.onCancel = { [weak self] in self?.hide(restoreFocus: true) }
+        panel.onGoBack = { [weak self] in self?.webView?.goBack() }
+        panel.onGoForward = { [weak self] in self?.webView?.goForward() }
+        panel.onResignKey = { [weak self] in
+            self?.lostKeyAt = .now
+            self?.reclaimFocusIfKept()
+        }
+        observeSpaceChanges()
         panel.onNewConversation = { [weak self] in self?.newConversation() }
         panel.onToggleSidebar = { [weak self] in self?.toggleSidebar() }
         panel.onFind = { [weak self] in self?.showFind() }
@@ -284,6 +363,8 @@ final class QuickChatController: NSObject {
                                                                 injectionTime: .atDocumentStart, forMainFrameOnly: true))
         config.userContentController.addUserScript(WKUserScript(source: QuickChatPageStyle.sandboxFrameScript,
                                                                 injectionTime: .atDocumentStart, forMainFrameOnly: false))
+        config.userContentController.addUserScript(WKUserScript(source: QuickChatPageStyle.noAutocorrectScript,
+                                                                injectionTime: .atDocumentStart, forMainFrameOnly: true))
         config.userContentController.addUserScript(WKUserScript(source: PageFind.script, injectionTime: .atDocumentStart,
                                                                 forMainFrameOnly: true, in: PageFind.world))
         if Self.startsClean {
@@ -582,26 +663,33 @@ final class QuickChatController: NSObject {
         return candidate
     }
 
-    private static func staysInPanel(_ url: URL?) -> Bool {
-        guard let host = url?.host?.lowercased() else { return true } // about:blank, data:, etc.
-        return inPanelHosts.contains { host == $0 || host.hasSuffix("." + $0) }
+    /// Whether a link to `url`, clicked on the page `source`, opens in the browser. The page
+    /// where you click the link decides, not a list of destinations: answers show only on
+    /// chatgpt.com, so a link from there that leaves ChatGPT (and is not its sign-in) goes to
+    /// the browser. Any other page in the panel is part of a sign-in (Google, Apple, Microsoft,
+    /// SSO), and its links stay in the panel, whatever their host.
+    private static func opensInBrowser(_ url: URL?, from source: URL?) -> Bool {
+        guard let host = url?.host?.lowercased() else { return false } // about:blank, data:, etc.
+        guard let sourceHost = source?.host, isChatGPTHost(sourceHost) else { return false }
+        let isOpenAISignIn = openAISignInHosts.contains { host == $0 || host.hasSuffix("." + $0) }
+        return !isChatGPTHost(host) && !isOpenAISignIn
     }
 }
 
 // MARK: - WebKit delegates
 
 extension QuickChatController: WKUIDelegate, WKNavigationDelegate, WKDownloadDelegate {
-    /// `window.open` / target=_blank: sign-in pages stay in the panel, everything else goes to the browser.
+    /// `window.open` / target=_blank: opens in the panel, unless `opensInBrowser` sends it to the browser.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         guard let url = navigationAction.request.url else { return nil }
         if Self.isGeneratedFile(url) {
             // window.open(blob:/data:) would otherwise replace the chat in the panel.
             webView.startDownload(using: navigationAction.request) { $0.delegate = self }
-        } else if Self.staysInPanel(url) {
-            webView.load(navigationAction.request)
-        } else {
+        } else if Self.opensInBrowser(url, from: webView.url) {
             NSWorkspace.shared.open(url)
+        } else {
+            webView.load(navigationAction.request)
         }
         return nil
     }
@@ -616,7 +704,7 @@ extension QuickChatController: WKUIDelegate, WKNavigationDelegate, WKDownloadDel
             return
         }
         if navigationAction.targetFrame?.isMainFrame == true, navigationAction.navigationType == .linkActivated,
-           !Self.staysInPanel(url), let url {
+           Self.opensInBrowser(url, from: webView.url), let url {
             NSWorkspace.shared.open(url)
             decisionHandler(.cancel)
             return

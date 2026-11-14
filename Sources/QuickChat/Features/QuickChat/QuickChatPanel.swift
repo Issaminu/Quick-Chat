@@ -7,6 +7,10 @@ final class QuickChatPanel: NSPanel {
     /// Reset Window Size (⌘O) applies these dimensions to an existing panel.
     static let defaultSize = NSSize(width: 440, height: 540)
     var onCancel: (() -> Void)?
+    var onResignKey: (() -> Void)?
+    /// ⌘[ and ⌘] while the panel is key: Back and Forward, as in a browser.
+    var onGoBack: (() -> Void)?
+    var onGoForward: (() -> Void)?
     var onNewConversation: (() -> Void)?
     /// ⌘B: opens or closes the page's sidebar.
     var onToggleSidebar: (() -> Void)?
@@ -69,6 +73,11 @@ final class QuickChatPanel: NSPanel {
     }
 
     override var canBecomeKey: Bool { true }
+
+    override func resignKey() {
+        super.resignKey()
+        onResignKey?()
+    }
     override var canBecomeMain: Bool { false }
 
     /// Window ▸ Zoom does the same as Expand, a double-click on the title bar, and ⌃⌘F.
@@ -247,14 +256,20 @@ final class QuickChatPanel: NSPanel {
 
     override func close() { onCancel?() }
 
-    /// ⌘W hides; the local shortcuts are caught here too, ahead of the web view (which
-    /// otherwise claims ⌘ combos).
+    /// ⌘W hides, and ⌘[ and ⌘] go back and forward. The local shortcuts are caught here too,
+    /// ahead of the web view (which otherwise claims ⌘ combos). The shortcut window refuses
+    /// these combos; a local shortcut saved with one before that still wins, as it is checked
+    /// first. They match by character, like menu key equivalents, so they work on any keyboard
+    /// layout.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if handleLocalShortcut(event) { return true }
-        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-           event.charactersIgnoringModifiers == "w" {
-            onCancel?()
-            return true
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
+            switch event.charactersIgnoringModifiers {
+            case "w": onCancel?(); return true
+            case "[": onGoBack?(); return true
+            case "]": onGoForward?(); return true
+            default: break
+            }
         }
         return super.performKeyEquivalent(with: event)
     }
