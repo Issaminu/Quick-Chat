@@ -30,7 +30,7 @@ enum PageStyleCheck {
         main { position:relative; height:100vh; display:flex; flex-direction:column; background:#0e0e0e; }
         header { position:fixed; inset:0 0 auto 0; height:52px; display:flex; z-index:30; pointer-events:none; }
         header button { width:36px; height:36px; pointer-events:auto; }
-        [data-app-shell-header-slot-content] { display:flex; gap:8px; padding:8px; }
+        [data-app-shell-header-slot="start"] > div > div { display:flex; gap:8px; padding:8px; }
         [data-app-shell-main-titlebar] { flex:1; display:flex; justify-content:flex-end; padding:8px; }
         .root { --composer-layout-surface-background:#212121; --composer-layout-surface-shadow:inset 0 0 1px #fff3;
                 --composer-border-radius:28px; --color-background-composer-primary:#2c67c5; --color-text-composer-primary:#fff; }
@@ -47,6 +47,8 @@ enum PageStyleCheck {
         .content p { height:40px; margin:0; }
         .spacer { position:sticky; bottom:0; flex-shrink:0; height:calc(var(--thread-scroll-padding-bottom) - 1rem); }
         .footer { position:absolute; inset:auto 0 0 0; }
+        .footer::before { content:""; position:absolute; inset:0; background-image:linear-gradient(transparent, #0e0e0e); }
+        .footer::after { content:""; position:absolute; inset:auto 0 0 0; height:24px; background-color:#0e0e0e; }
         [data-thread-scroll-footer]::after { content:""; display:block; height:var(--thread-composer-bottom-inset); }
         [data-thread-scroll-footer] > [aria-hidden] { position:absolute; inset:0; }
         [data-pip-obstacle] { position:relative; padding:0 16px; }
@@ -55,10 +57,10 @@ enum PageStyleCheck {
         [role="menu"] { position:fixed; top:200px; left:100px; width:100px; height:40px; }
         </style></head><body><div data-app-shell-active-page="true"><main data-app-shell-main-surface>
         <header data-app-shell-titlebar>
-          <div data-app-shell-header-slot="start"><div data-app-shell-header-slot-content>
-            <div class="bg-surface"><button id="sidebar-button" aria-controls="sidebar">S</button></div>
-            <div class="bg-surface"><button id="header-new-chat">N</button></div>
-          </div></div>
+          <div data-app-shell-header-slot="start"><div><div>
+            <div class="bg-surface"><div><button id="sidebar-button" aria-controls="sidebar">S</button></div></div>
+            <div class="bg-surface"><div><button id="header-new-chat">N</button></div></div>
+          </div></div></div>
           <div data-app-shell-main-titlebar><span id="title">Title</span><button id="temporary">T</button></div>
         </header>
         <div id="page"></div>
@@ -119,7 +121,7 @@ enum PageStyleCheck {
                 'text uses the system font smoothing': getComputedStyle(composer).webkitFontSmoothing === 'auto',
                 'scrolling does not stretch at the ends': getComputedStyle(document.documentElement).overscrollBehaviorY === 'none',
                 'header has no other page buttons': !shown($('#header-new-chat')) && !shown($('#temporary')) && !shown($('#title')),
-                'header buttons have no fill': alpha(getComputedStyle($('#sidebar-button').parentElement).backgroundColor) === 0,
+                'header buttons have no fill': alpha(getComputedStyle($('#sidebar-button').closest('.bg-surface')).backgroundColor) === 0,
                 'composer is translucent': alpha(getComputedStyle(composer).backgroundColor) > 0 && alpha(getComputedStyle(composer).backgroundColor) < 40,
                 'composer has one 1-point border': getComputedStyle(composer).boxShadow.includes('inset') && getComputedStyle(composer).borderTopWidth === '0px',
                 'composer corners are concentric with the window': getComputedStyle(composer).borderTopLeftRadius === '12px',
@@ -151,6 +153,7 @@ enum PageStyleCheck {
                 result['message text is 15 points'] = getComputedStyle(content).getPropertyValue('--font-text-md-size').trim() === '15px';
                 result['disclaimer is hidden and takes no space'] = $('#disclaimer').getClientRects().length === 0;
                 result['opaque composer backdrop is hidden'] = !shown($('[data-thread-scroll-footer] > [aria-hidden]'));
+                result['the footer draws no backdrop'] = ['::before', '::after'].every(p => { const s = getComputedStyle($('.footer'), p); return alpha(s.backgroundColor) === 0 && s.backgroundImage === 'none'; });
             }
             return result;
         })();

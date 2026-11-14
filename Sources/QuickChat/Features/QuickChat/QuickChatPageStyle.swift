@@ -75,7 +75,13 @@ enum QuickChatPageStyle {
         /* In a wide window, the page docks its sidebar rail and paints the frame and the workspace. */
         [data-app-shell-frame], [data-app-shell-workspace]::before { background-color: transparent !important; }
         :is([role="main"], [role="main"] *):has(form[data-chatgpt-composer]) { background-color: transparent !important; }
+        /* The page's opaque backdrop behind the conversation's composer: an element in the
+           footer, or the fill of the footer's parent. */
         [data-thread-scroll-footer] > [aria-hidden="true"] { display: none !important; }
+        :has(> [data-thread-scroll-footer])::before, :has(> [data-thread-scroll-footer])::after {
+            background: none !important;
+            box-shadow: none !important;
+        }
         /* Interactive answers: the sandbox frame shows the panel's material too (see sandboxFrameScript). */
         iframe[src*=".web-sandbox.oaiusercontent.com"] { background-color: transparent !important; }
 
@@ -87,7 +93,12 @@ enum QuickChatPageStyle {
                 visibility: hidden !important;
                 pointer-events: none !important;
             }
-            & [data-app-shell-header-slot="start"] [data-app-shell-header-slot-content] > :not(:has([aria-controls])) { display: none !important; }
+            /* In the start slot, only the sidebar button (the one with aria-controls) and its
+               containers stay. All other content (such as New chat) takes no space. The wide
+               layout has no sidebar button there, so its slot shows nothing. */
+            & [data-app-shell-header-slot="start"] :not([aria-controls], :has([aria-controls]), [aria-controls] *) {
+                display: none !important;
+            }
             /* The title bar is on top: it takes the pointer, so text and links under it get no
                text pointer and no presses. The page script sends the scroll wheel through. */
             & header[data-app-shell-titlebar] { pointer-events: auto !important; cursor: default !important; }
