@@ -343,6 +343,24 @@ enum Check {
         controller.show()
         check(panel.isVisible && background.subviews.contains(web),"showing after hide keeps the same web view")
 
+        // Command-[ and Command-] go back and forward, as in a browser (a second local page).
+        let path={ web.url?.path }
+        web.loadHTMLString("<p>second page</p>",baseURL:URL(string:"https://chatgpt.com/c/second")!)
+        await wait { path() == "/c/second" && !web.isLoading }
+        let back=NSEvent.keyEvent(with:.keyDown,location:.zero,modifierFlags:.command,timestamp:0,windowNumber:panel.windowNumber,context:nil,characters:"[",charactersIgnoringModifiers:"[",isARepeat:false,keyCode:33)!
+        let forward=NSEvent.keyEvent(with:.keyDown,location:.zero,modifierFlags:.command,timestamp:0,windowNumber:panel.windowNumber,context:nil,characters:"]",charactersIgnoringModifiers:"]",isARepeat:false,keyCode:30)!
+        let backTaken=panel.performKeyEquivalent(with:back)
+        await wait { path() == "/c/previous" }
+        check(backTaken && path() == "/c/previous","Command-[ goes back",path() as Any)
+        // The test app's local pages leave no forward entry, so this checks that the key reaches
+        // the panel's Forward action (the controller connects it to the web view's goForward).
+        let goForward=panel.onGoForward
+        var forwardCalls=0
+        panel.onGoForward={ forwardCalls += 1 }
+        let forwardTaken=panel.performKeyEquivalent(with:forward)
+        panel.onGoForward=goForward
+        check(forwardTaken && forwardCalls == 1,"Command-] is the panel's Forward key")
+
         let saved=NSPoint(x:screen.visibleFrame.minX+80,y:screen.visibleFrame.minY+100)
         panel.setFrame(NSRect(origin:saved,size:NSSize(width:500,height:640)),display:false)
         panel.saveFrame(usingName:QuickChatPanel.autosaveName)
