@@ -181,7 +181,7 @@ enum PageVisualCheck {
                 guard let line = item["line"] as? String else { return nil }
                 let frame = CGRect(x: item["x"] as? Double ?? 0, y: item["y"] as? Double ?? 0,
                                    width: item["w"] as? Double ?? 0, height: item["h"] as? Double ?? 0)
-                let size = frame.width * frame.height
+                let size = Double(frame.width * frame.height)
                 if item["pseudo"] as? Bool == true { return (line, drawn, size) }
                 let box = frame.intersection(inner)
                 let count = box.isNull ? 0 : pixels.drawn(in: box)
