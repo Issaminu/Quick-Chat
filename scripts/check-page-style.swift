@@ -201,7 +201,7 @@ enum PageStyleCheck {
         for (state, script) in [("empty chat", "show('home')"), ("conversation", "show('conversation')")] {
             _ = try await web.evaluateJavaScript(script + ";" + screenState)
             try await Task.sleep(for: .milliseconds(300))
-            let findings = await PageVisualCheck.check(web, prefix: "check", folder: nil)
+            let findings = await PageVisualCheck.check(web, prefix: "check", folder: nil).findings
             let pass = findings.isEmpty
             print("\(pass ? "PASS" : "FAIL") screen: the \(state) draws nothing in the empty areas\(pass ? "" : " (\(findings.map { "\($0.area.id): \($0.drawnPixels) pixels, \($0.painters)" }))")")
             if !pass { failures += 1 }
@@ -211,7 +211,7 @@ enum PageStyleCheck {
             document.querySelector('.footer').insertAdjacentHTML('beforeend', '<div id="band" style="position:absolute; inset:auto 0 0 0; height:60px; background:#0e0e0e; z-index:-1"></div>');
             """)
         try await Task.sleep(for: .milliseconds(300))
-        let findings = await PageVisualCheck.check(web, prefix: "check", folder: nil)
+        let findings = await PageVisualCheck.check(web, prefix: "check", folder: nil).findings
         let found = Dictionary(findings.map { ($0.area.id, $0.painters.joined(separator: "\n")) }, uniquingKeysWith: { a, _ in a })
         for (area, element) in [("title-bar", "new-title-button"), ("below-composer", "band")] {
             let pass = found[area]?.contains(element) == true

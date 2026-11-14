@@ -66,8 +66,9 @@ enum PageVisualCheck {
         return JSON.stringify(areas.filter(a => a.w >= 8 && a.h >= 8));
         """#
 
-    /// The elements that draw in a rectangle (x, y, w, h in CSS pixels), as JSON lines. It
-    /// names each element by its tag, attributes and classes, never by its text.
+    /// The elements that can draw in a rectangle (x, y, w, h in CSS pixels), as JSON:
+    /// `{ line, x, y, w, h, pseudo }`. `line` names the element by its tag, attributes and
+    /// classes, never by its text. `pseudo`: only its ::before or ::after draws.
     static let paintersScript = #"""
         const rect = { left: x, top: y, right: x + w, bottom: y + h };
         const alpha = color => { const c = document.createElement("canvas").getContext("2d"); c.fillStyle = color; c.fillRect(0, 0, 1, 1); return c.getImageData(0, 0, 1, 1).data[3]; };
@@ -91,7 +92,7 @@ enum PageVisualCheck {
         };
         const lines = [];
         for (const e of document.querySelectorAll("body *")) {
-            if (lines.length >= 15) break;
+            if (lines.length >= 40) break;
             if (e.closest("svg") && e.localName !== "svg") continue;
             if (!shows(e)) continue;
             const r = e.getBoundingClientRect();
@@ -99,6 +100,7 @@ enum PageVisualCheck {
             const found = meets(r) ? paints(style, "") : [];
             if (meets(r) && [...e.childNodes].some(n => n.nodeType === Node.TEXT_NODE && n.data.trim())) found.push("text");
             if (meets(r) && /^(svg|img|canvas|video|iframe|picture)$/.test(e.localName)) found.push(e.localName);
+            const own = found.length;
             // ::before and ::after can reach outside their element, so they count when the element
             // is near the rectangle.
             const near = r.right > rect.left - 200 && r.left < rect.right + 200 && r.bottom > rect.top - 200 && r.top < rect.bottom + 200;
@@ -111,25 +113,55 @@ enum PageVisualCheck {
             let parent = e.parentElement;
             while (parent && parent !== document.body && !parent.getAttributeNames().some(n => n.startsWith("data-"))) parent = parent.parentElement;
             const inside = parent && parent !== document.body ? ` inside ${describe(parent).split(".")[0]}` : "";
-            lines.push(`\`${describe(e)}\`${inside} at ${[r.left, r.top].map(Math.round).join(",")} ${Math.round(r.width)}×${Math.round(r.height)}: ${found.join("; ")}`);
+            lines.push({
+                line: `\`${describe(e)}\`${inside} at ${[r.left, r.top].map(Math.round).join(",")} ${Math.round(r.width)}×${Math.round(r.height)}: ${found.join("; ")}`,
+                x: r.left, y: r.top, w: r.width, h: r.height, pseudo: own === 0,
+            });
         }
         return JSON.stringify(lines);
         """#
 
+    struct Result {
+        var findings: [Finding] = []
+        /// A dialog of the page was open (see `dialogScript`).
+        var note: String?
+    }
+
+    /// A dialog of the page (for example ChatGPT's one-time Temporary Chat dialog) covers the
+    /// panel. It is the page's own content, not a fault of the style, so the check closes it with
+    /// Esc first. 0: no dialog, 1: closed, 2: still open.
+    static let dialogScript = #"""
+        const open = () => [...document.querySelectorAll('[role="dialog"], [role="alertdialog"], [aria-modal="true"]')]
+            .filter(e => e.getClientRects().length > 0 && e.checkVisibility({ opacityProperty: true, visibilityProperty: true }));
+        if (!open().length) return 0;
+        for (const dialog of open()) {
+            dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", keyCode: 27, bubbles: true, cancelable: true }));
+        }
+        await new Promise(resolve => setTimeout(resolve, 800));
+        return open().length ? 2 : 1;
+        """#
+
     /// Runs the screen checks on the page that `web` shows. Saves a marked image of each failed
     /// area as `<prefix>-<area>.png` in `folder`.
-    static func check(_ web: WKWebView, prefix: String, folder: URL?) async -> [Finding] {
+    static func check(_ web: WKWebView, prefix: String, folder: URL?) async -> Result {
+        var result = Result()
+        switch try? await web.callAsyncJavaScript(dialogScript, arguments: [:], in: nil, contentWorld: .page) as? Int {
+        case 1: result.note = "A dialog of the page was open. The check closed it with Esc."
+        case 2:
+            result.note = "A dialog of the page stayed open after Esc, so the screen checks did not run."
+            return result
+        default: break
+        }
         guard let json = try? await web.callAsyncJavaScript(areasScript, arguments: [:], in: nil, contentWorld: .page) as? String,
               let list = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [[String: Any]], !list.isEmpty,
               let image = try? await web.takeSnapshot(configuration: nil),
-              let pixels = Pixels(image) else { return [] }
+              let pixels = Pixels(image) else { return result }
         let areas = list.compactMap { item -> Area? in
             guard let id = item["id"] as? String, let name = item["name"] as? String,
                   let x = item["x"] as? Double, let y = item["y"] as? Double,
                   let w = item["w"] as? Double, let h = item["h"] as? Double else { return nil }
             return Area(id: id, name: name, rect: CGRect(x: x, y: y, width: w, height: h))
         }
-        var findings: [Finding] = []
         for area in areas {
             let inner = area.rect.insetBy(dx: edge, dy: edge)
             guard inner.width > 0, inner.height > 0 else { continue }
@@ -140,15 +172,27 @@ enum PageVisualCheck {
             let raw = try? await web.callAsyncJavaScript(paintersScript, arguments: [
                 "x": inner.minX, "y": inner.minY, "w": inner.width, "h": inner.height,
             ], in: nil, contentWorld: .page) as? String
-            let painters = (raw.flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } as? [String]) ?? []
+            // The elements that draw most in the area come first. An element counts only the drawn
+            // pixels in its own box, so an element that the page hides (for example a message
+            // under the mask) drops out. ::before and ::after can be outside the box, so for them
+            // the whole area counts.
+            let candidates = (raw.flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } as? [[String: Any]]) ?? []
+            let painters = candidates.compactMap { item -> (String, Int)? in
+                guard let line = item["line"] as? String else { return nil }
+                if item["pseudo"] as? Bool == true { return (line, drawn) }
+                let box = CGRect(x: item["x"] as? Double ?? 0, y: item["y"] as? Double ?? 0,
+                                 width: item["w"] as? Double ?? 0, height: item["h"] as? Double ?? 0).intersection(inner)
+                let count = box.isNull ? 0 : pixels.drawn(in: box)
+                return count > 0 ? (line, count) : nil
+            }.enumerated().sorted { ($0.element.1, -$0.offset) > ($1.element.1, -$1.offset) }.prefix(12).map(\.element.0)
             var file: String?
             if let folder, let png = pixels.markedImage(of: area.rect) {
                 file = "\(prefix)-\(area.id).png"
                 try? png.write(to: folder.appendingPathComponent(file!))
             }
-            findings.append(Finding(area: area, drawnPixels: drawn, share: Double(drawn) / total, painters: painters, image: file))
+            result.findings.append(Finding(area: area, drawnPixels: drawn, share: Double(drawn) / total, painters: Array(painters), image: file))
         }
-        return findings
+        return result
     }
 
     /// The page as it shows in the panel: on a gray like the panel's material.

@@ -82,6 +82,8 @@ enum PageHookCheck {
         var results: [String: Bool] = [:]
         var errors: [String: String] = [:]
         var findings: [PageVisualCheck.Finding] = []
+        /// A note of the screen checks (a dialog of the page was open).
+        var screenNote: String?
         /// The names of the page's data-* attributes.
         var attributes: [String] = []
         var safeMode: String?
@@ -102,7 +104,9 @@ enum PageHookCheck {
     /// page's attributes, then the hook checks.
     static func examine(_ page: PageHooks.Page, web: WKWebView, messages: PageMessages, folder: URL) async -> PageRun {
         var run = PageRun()
-        run.findings = await PageVisualCheck.check(web, prefix: "\(page.rawValue)-screen", folder: folder)
+        let screen = await PageVisualCheck.check(web, prefix: "\(page.rawValue)-screen", folder: folder)
+        run.findings = screen.findings
+        run.screenNote = screen.note
         let names = try? await web.callAsyncJavaScript(attributesScript, arguments: [:], in: nil, contentWorld: .page) as? String
         run.attributes = (names.flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } as? [String]) ?? []
         let raw = try? await web.callAsyncJavaScript(PageHooks.checkScript(for: page), arguments: [:], in: nil, contentWorld: .page) as? String
@@ -207,6 +211,10 @@ enum PageHookCheck {
                 // can fail a check once. A check is broken only when it fails both times.
                 if !run.failures.isEmpty {
                     print("Some checks failed on the \(page.rawValue) page: \(run.failures.sorted().joined(separator: ", ")). Loading it again for a second try.")
+                    for finding in run.findings {
+                        print("  First try: the page draws \(finding.area.name) (\(finding.drawnPixels) pixels)")
+                        for painter in finding.painters.prefix(3) { print("    \(painter)") }
+                    }
                     loaded = await load(address, in: web, messages: messages, chatPage: true)
                     if loaded == .ready || loaded == .notReady {
                         let second = await examine(page, web: web, messages: messages, folder: folder)
@@ -226,6 +234,7 @@ enum PageHookCheck {
                     "screen": run.findings.map { ["area": $0.area.id, "pixels": $0.drawnPixels, "share": $0.share, "painters": $0.painters, "image": $0.image as Any] },
                     "attributes": run.attributes,
                     "unsteady": unsteady[page] ?? [],
+                    "screenNote": run.screenNote as Any,
                     "safeMode": run.safeMode as Any,
                 ]
                 for (id, works) in run.results.sorted(by: { $0.key < $1.key }) {
@@ -236,6 +245,7 @@ enum PageHookCheck {
                     for painter in finding.painters { print("    \(painter)") }
                 }
                 for id in unsteady[page] ?? [] { print("NOTE \(page.rawValue): \(id) failed on one try only") }
+                if let note = run.screenNote { print("NOTE \(page.rawValue): \(note)") }
                 if run.results.isEmpty { print("FAIL \(page.rawValue): the checks did not run") }
             }
             if outcome == .blocked || outcome == .session { break }
@@ -461,7 +471,8 @@ enum PageHookCheck {
             }
             let hooks = run.results.isEmpty ? (info["note"] as? String ?? "did not run") :
                 "\(run.results.values.filter { $0 }.count) of \(run.results.count) pass" + (run.safeMode.map { "; safe mode turned the style off (it hid the \($0))" } ?? "")
-            let areas = run.findings.isEmpty ? "pass" : "fail: " + run.findings.map(\.area.name).joined(separator: ", ")
+            var areas = run.findings.isEmpty ? "pass" : "fail: " + run.findings.map(\.area.name).joined(separator: ", ")
+            if let note = run.screenNote { areas = note.contains("did not run") ? note : "\(areas) (\(note))" }
             lines.append("| \(page.rawValue) | \(hooks) | \(areas) |")
         }
         if outcome == .broken {
