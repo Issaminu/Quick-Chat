@@ -164,7 +164,10 @@ enum PageFindCheck {
         expect("a changed text keeps the current match", result["index"] as? Int == 3, result)
 
         _ = try await page("document.getElementById('first').insertAdjacentHTML('afterend', '<p>new apple</p>')")
-        try await Task.sleep(for: .milliseconds(600))
+        // The search runs again 0.3 seconds after the change. A slow machine can need more time.
+        for _ in 0..<100 where results.messages.last?["count"] as? Int != 5 {
+            try await Task.sleep(for: .milliseconds(50))
+        }
         let message = results.messages.last
         expect("a page change searches again", message?["type"] as? String == "findResult" && message?["count"] as? Int == 5,
                message as Any)

@@ -252,11 +252,18 @@ enum Check {
         check(pointerInside == "inside" && pageFirst,"the buttons show after the page has the new state, so they show with the page's band")
         try? await Task.sleep(for:.milliseconds(30))
         check(opacity() == 1,"the shown title bar is fully opaque on screen",opacity())
+        // The fade takes 0.2 seconds. The check waits for a value in the middle of it (a slow
+        // machine can miss a fixed wait), then the title bar must be opaque at once.
         controller.setPointerInside(false,immediately:true)
-        try? await Task.sleep(for:.milliseconds(80))
-        let midFade=opacity()
+        var midFade=opacity()
+        let fadeStarted=Date()
+        while !(midFade > 0 && midFade < 1) && Date().timeIntervalSince(fadeStarted) < 0.5 {
+            try? await Task.sleep(for:.milliseconds(2))
+            midFade=opacity()
+        }
         controller.setPointerInside(true)
-        try? await Task.sleep(for:.milliseconds(30))
+        let backStarted=Date()
+        while opacity() != 1 && Date().timeIntervalSince(backStarted) < 0.1 { try? await Task.sleep(for:.milliseconds(2)) }
         check(midFade > 0 && midFade < 1 && opacity() == 1,"the pointer stops a hide fade and shows the title bar at once",[midFade,opacity()])
 
         let materials=[background, loading, cover].compactMap{$0 as? PanelMaterialView}
