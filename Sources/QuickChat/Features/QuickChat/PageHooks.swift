@@ -233,17 +233,19 @@ enum PageHooks {
     ]
 
     /// The checks of `page` as one async function body that returns `{ id: true/false }`. A check
-    /// that throws counts as broken. It can call the page style's sidebar script as
+    /// that throws, or that does not finish in 30 seconds, counts as broken. It can call the page style's sidebar script as
     /// `toggleSidebar()`.
     static func checkScript(for page: Page) -> String {
         let checks = all.filter { $0.pages.contains(page) }.map { hook in
-            "try { result[\(javaScriptString(hook.id))] = !!(\(hook.check)); } catch (error) { result[\(javaScriptString(hook.id))] = false; errors[\(javaScriptString(hook.id))] = String(error); }" +
+            "try { result[\(javaScriptString(hook.id))] = !!(await within((async () => (\(hook.check)))())); } catch (error) { result[\(javaScriptString(hook.id))] = false; errors[\(javaScriptString(hook.id))] = String(error); }" +
             (hook.check.contains("uses(") ? " if (!result[\(javaScriptString(hook.id))] && window.__quickChatSourceInfo) errors[\(javaScriptString(hook.id))] ??= `not in the page's source (${window.__quickChatSourceInfo})`;" : "")
         }
         return """
             const toggleSidebar = () => \(expression(QuickChatPageStyle.toggleSidebarScript));
             const temporaryChatButtons = \(QuickChatPageStyle.temporaryChatButtons);
             \(helpers)
+            // A check that does not finish in 30 seconds counts as broken.
+            const within = check => Promise.race([check, new Promise((_, reject) => setTimeout(() => reject(new Error("the check did not finish in 30 seconds")), 30000))]);
             const result = {}, errors = {};
             \(checks.joined(separator: "\n"))
             return JSON.stringify({ result, errors });

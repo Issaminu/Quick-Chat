@@ -159,7 +159,7 @@ The style uses only ChatGPT's own semantic attributes (`data-app-shell-*`, `data
 
 - **Safe mode.** A moment after a page loads, the page script checks if the style hides the composer or most of a conversation's text. If it does, the style turns itself off for that page: the panel shows ChatGPT's own page, which still works, without the panel's buttons over it. The menu bar menu then says so.
 - **One list of page hooks.** `PageHooks.swift` lists every attribute, CSS variable, control, shortcut and storage key of chatgpt.com that Quick Chat uses, with what it is for and what users see if it breaks. A check fails when the style uses a hook that the list does not name.
-- **A daily page check.** Every day, GitHub Actions checks each hook on the live chatgpt.com with a test account, and opens an issue when ChatGPT changes its page (see [The daily page check](#the-daily-page-check)).
+- **A daily page check.** Every day, GitHub Actions checks each hook and the look of the panel on the live chatgpt.com with a test account, and opens an issue when ChatGPT changes its page (see [The daily page check](#the-daily-page-check)).
 
 ## Free ⌥Space from ChatGPT's Mini
 
@@ -227,13 +227,24 @@ swiftc -swift-version 6 Sources/QuickChat/Features/QuickChat/QuickChatPageStyle.
 
 ### The daily page check
 
-Quick Chat depends on how chatgpt.com is built, and ChatGPT can change that at any time. `.github/workflows/page-check.yml` runs every day at 06:17 UTC (and on demand). It signs in with a test account, and opens the empty chat, a temporary chat, a conversation (read only, it sends nothing) and a wide panel, in the same WebKit and with the same page style as the app. On each page it runs the checks in `PageHooks.swift`: each hook exists, and the composer, the messages, the sidebar button and the message fade work.
+Quick Chat depends on how chatgpt.com is built, and ChatGPT can change that at any time. `.github/workflows/page-check.yml` runs every day at 06:17 UTC (and on demand). It signs in with a test account, and opens the empty chat, a temporary chat, a conversation (read only, it sends nothing) and a wide panel, in the same WebKit and with the same page style as the app. On each page it runs two kinds of checks:
+
+- **Hook checks** (`PageHooks.swift`): each hook exists, and the composer, the messages, the sidebar button and the message fade work.
+- **Screen checks** (`scripts/PageVisualCheck.swift`): some areas of the panel must show only the panel's material: the title bar, the areas below and beside the composer, and the area above the composer in the empty chat. The check takes an image of the page with a transparent background, and fails when the page draws in such an area. So it also finds new things that ChatGPT adds, such as a new button or a dark band, which no hook names.
+
+A page with a failed check loads again for a second try, and a check counts as broken only when it fails both times. Each check has a time limit of 30 seconds.
+
+The report tells you what to fix:
+
+- What users see, for each broken hook and each failed screen check.
+- For each failed screen check: the elements that draw in the area (tag, attributes and classes, never the page's text), and a marked image of the area in the run's artifact (drawn pixels in red).
+- The page's `data-*` attribute names that are gone or new since the last passing run. The names that Quick Chat uses are in bold. When all checks pass but the names changed, the run's summary shows this as an early warning.
 
 It reports on GitHub issues. Each kind of problem has one issue with its own label, and the issue closes by itself when the problem goes away:
 
 | Label | Meaning | What to do |
 | --- | --- | --- |
-| `page-change` | ChatGPT changed its page. The issue lists each broken hook, what it is for and what users see. | Update the hook in `PageHooks.swift` and `QuickChatPageStyle.swift`. The run's artifact has a screenshot of each page. |
+| `page-change` | ChatGPT changed its page. The issue lists what users see, each broken hook and failed screen check, and the changed attribute names. | Update the hook in `PageHooks.swift` and `QuickChatPageStyle.swift`. The run's artifact has an image of each page as the panel shows it. |
 | `page-check-session` | The test account's session expired (after about 90 days). | Run `scripts/renew-page-check-session.sh` on a Mac and sign in with the test account. |
 | `page-check-blocked` | The site blocked the check (for example a Cloudflare challenge). | Wait a day. If it stays, the check needs another way to reach the site. |
 | `page-check-failed` | The check itself could not run. | Read the run's log. |
@@ -245,7 +256,7 @@ To set it up in your own fork:
 3. In a clone, run `scripts/renew-page-check-session.sh` and sign in with the test account in its window. It stores the session as the `CHATGPT_SESSION` secret. The session never shows on screen.
 4. Run `gh variable set CHATGPT_CONVERSATION --body "<the conversation's address>"`.
 5. In a fork, turn on workflows in the Actions tab: GitHub turns off scheduled workflows in forks, and after 60 days without activity in a repository.
-6. Run the check once: `gh workflow run page-check.yml`.
+6. Run the check once: `gh workflow run page-check.yml`. To run it without a change to the issues (for example on a branch), add `-f report=false`.
 
 To run the check on your Mac with a session file: build it with the command at the top of `scripts/check-page-hooks.swift`.
 

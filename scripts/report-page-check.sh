@@ -82,7 +82,7 @@ body_file=$(mktemp)
 {
   cat "$REPORT"
   echo
-  echo "Found by the daily page check: [run]($RUN_URL) (its artifact has a screenshot of each page)."
+  echo "Found by the daily page check: [run]($RUN_URL). Its artifact has an image of each page as the panel shows it, and a marked image of each failed screen check."
   echo
   echo "<!-- page-check: $marker -->"
 } > "$body_file"

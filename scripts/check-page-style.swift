@@ -1,5 +1,5 @@
 // Run from the repository root:
-// swiftc -swift-version 6 Sources/QuickChat/Features/QuickChat/QuickChatPageStyle.swift Sources/QuickChat/Features/QuickChat/PageHooks.swift scripts/check-page-style.swift -o /tmp/quickchat-page-style-check
+// swiftc -swift-version 6 Sources/QuickChat/Features/QuickChat/QuickChatPageStyle.swift Sources/QuickChat/Features/QuickChat/PageHooks.swift scripts/PageVisualCheck.swift scripts/check-page-style.swift -o /tmp/quickchat-page-style-check
 // /tmp/quickchat-page-style-check
 //
 // Checks the page style against a small page that has the same hooks as chatgpt.com: the
@@ -165,6 +165,7 @@ enum PageStyleCheck {
         configuration.userContentController.addUserScript(WKUserScript(
             source: QuickChatPageStyle.script, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 440, height: 540), configuration: configuration)
+        PageVisualCheck.prepare(web)
         let window = NSWindow(contentRect: web.frame, styleMask: .borderless, backing: .buffered, defer: false)
         window.contentView = web
         window.orderFront(nil)
@@ -189,6 +190,36 @@ enum PageStyleCheck {
                 if !result[name]! { failures += 1 }
             }
         }
+        // The screen checks of the daily page check (scripts/PageVisualCheck.swift): the styled page
+        // draws nothing in the panel's empty areas, and a new title bar button and a band behind
+        // the composer are found, with the elements that draw them.
+        // The test page's own menus stay out of these checks. Like ChatGPT, the messages start
+        // below the title bar.
+        let screenState = """
+            document.head.insertAdjacentHTML('beforeend', '<style id="screen-test">[role="menu"], [data-radix-popper-content-wrapper], #ask-toolbar { display:none !important; } [data-app-action-timeline-scroll] { --thread-content-top-inset:52px; padding-top:52px; }</style>');
+            """
+        for (state, script) in [("empty chat", "show('home')"), ("conversation", "show('conversation')")] {
+            _ = try await web.evaluateJavaScript(script + ";" + screenState)
+            try await Task.sleep(for: .milliseconds(300))
+            let findings = await PageVisualCheck.check(web, prefix: "check", folder: nil)
+            let pass = findings.isEmpty
+            print("\(pass ? "PASS" : "FAIL") screen: the \(state) draws nothing in the empty areas\(pass ? "" : " (\(findings.map { "\($0.area.id): \($0.drawnPixels) pixels, \($0.painters)" }))")")
+            if !pass { failures += 1 }
+        }
+        _ = try await web.evaluateJavaScript("""
+            document.body.insertAdjacentHTML('beforeend', '<div id="new-title-button" style="position:fixed; top:10px; left:120px; width:30px; height:30px; background:#888"></div>');
+            document.querySelector('.footer').insertAdjacentHTML('beforeend', '<div id="band" style="position:absolute; inset:auto 0 0 0; height:60px; background:#0e0e0e; z-index:-1"></div>');
+            """)
+        try await Task.sleep(for: .milliseconds(300))
+        let findings = await PageVisualCheck.check(web, prefix: "check", folder: nil)
+        let found = Dictionary(findings.map { ($0.area.id, $0.painters.joined(separator: "\n")) }, uniquingKeysWith: { a, _ in a })
+        for (area, element) in [("title-bar", "new-title-button"), ("below-composer", "band")] {
+            let pass = found[area]?.contains(element) == true
+            print("\(pass ? "PASS" : "FAIL") screen: finds what draws in the area \(area) (\(element))\(pass ? "" : " (\(found))")")
+            if !pass { failures += 1 }
+        }
+        _ = try await web.evaluateJavaScript("document.querySelectorAll('#new-title-button, #band, #screen-test').forEach(e => e.remove())")
+
         // The mask covers the visible part of the message list in each of these cases.
         _ = try await web.evaluateJavaScript("show('conversation')")
         try await Task.sleep(for: .milliseconds(200))

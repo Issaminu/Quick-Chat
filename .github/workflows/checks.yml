@@ -37,7 +37,7 @@ jobs:
 
       - name: Page style check
         run: |
-          swiftc -swift-version 6 Sources/QuickChat/Features/QuickChat/QuickChatPageStyle.swift Sources/QuickChat/Features/QuickChat/PageHooks.swift scripts/check-page-style.swift -o "$RUNNER_TEMP/page-style-check"
+          swiftc -swift-version 6 Sources/QuickChat/Features/QuickChat/QuickChatPageStyle.swift Sources/QuickChat/Features/QuickChat/PageHooks.swift scripts/PageVisualCheck.swift scripts/check-page-style.swift -o "$RUNNER_TEMP/page-style-check"
           "$RUNNER_TEMP/page-style-check"
 
       - name: Find check
