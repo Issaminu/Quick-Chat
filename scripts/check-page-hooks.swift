@@ -390,8 +390,18 @@ enum PageHookCheck {
             for (hook, onPages) in broken.sorted(by: { $0.key.id < $1.key.id }) {
                 lines.append("- \(hook.ifBroken) (hook `\(hook.id)`, on \(onPages.sorted().joined(separator: ", ")))")
             }
+            // One line for each effect on a page (the three areas around the composer have one).
+            var effects: [(page: PageHooks.Page, effect: String, areas: [String])] = []
             for (page, finding) in screen {
-                lines.append("- \(screenEffect(finding.area.id)) (screen check, \(page.rawValue): \(finding.area.name))")
+                let effect = screenEffect(finding.area.id)
+                if let i = effects.firstIndex(where: { $0.page == page && $0.effect == effect }) {
+                    effects[i].areas.append(finding.area.name)
+                } else {
+                    effects.append((page, effect, [finding.area.name]))
+                }
+            }
+            for item in effects {
+                lines.append("- \(item.effect) (screen check, \(item.page.rawValue): \(item.areas.joined(separator: ", ")))")
             }
             if !broken.isEmpty {
                 lines.append("")

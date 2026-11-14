@@ -74,10 +74,10 @@ enum PageVisualCheck {
         const alpha = color => { const c = document.createElement("canvas").getContext("2d"); c.fillStyle = color; c.fillRect(0, 0, 1, 1); return c.getImageData(0, 0, 1, 1).data[3]; };
         const meets = r => r.width > 0 && r.height > 0 && r.right > rect.left && r.left < rect.right && r.bottom > rect.top && r.top < rect.bottom;
         const shows = e => e.checkVisibility({ opacityProperty: true, visibilityProperty: true });
-        const describe = e => {
+        const describe = (e, most = 12) => {
             const attributes = e.getAttributeNames()
                 .filter(n => n.startsWith("data-") || ["id", "role", "aria-label", "aria-hidden", "aria-controls"].includes(n))
-                .map(n => { const v = e.getAttribute(n); return v === "" || v === "true" ? `[${n}]` : `[${n}="${v.slice(0, 40)}"]`; });
+                .slice(0, most).map(n => { const v = e.getAttribute(n); return v === "" || v === "true" ? `[${n}]` : `[${n}="${v.slice(0, 40)}"]`; });
             const classes = [...e.classList].slice(0, 4).map(c => "." + c).join("");
             return e.localName + attributes.join("") + classes;
         };
@@ -112,7 +112,7 @@ enum PageVisualCheck {
             if (!found.length) continue;
             let parent = e.parentElement;
             while (parent && parent !== document.body && !parent.getAttributeNames().some(n => n.startsWith("data-"))) parent = parent.parentElement;
-            const inside = parent && parent !== document.body ? ` inside ${describe(parent).split(".")[0]}` : "";
+            const inside = parent && parent !== document.body ? ` inside ${describe(parent, 3).split(".")[0]}` : "";
             lines.push({
                 line: `\`${describe(e)}\`${inside} at ${[r.left, r.top].map(Math.round).join(",")} ${Math.round(r.width)}×${Math.round(r.height)}: ${found.join("; ")}`,
                 x: r.left, y: r.top, w: r.width, h: r.height, pseudo: own === 0,
@@ -177,16 +177,24 @@ enum PageVisualCheck {
             // under the mask) drops out. ::before and ::after can be outside the box, so for them
             // the whole area counts.
             let candidates = (raw.flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } as? [[String: Any]]) ?? []
-            let painters = candidates.compactMap { item -> (String, Int)? in
+            let painters = candidates.compactMap { item -> (String, Int, Double)? in
                 guard let line = item["line"] as? String else { return nil }
-                if item["pseudo"] as? Bool == true { return (line, drawn) }
-                let box = CGRect(x: item["x"] as? Double ?? 0, y: item["y"] as? Double ?? 0,
-                                 width: item["w"] as? Double ?? 0, height: item["h"] as? Double ?? 0).intersection(inner)
+                let frame = CGRect(x: item["x"] as? Double ?? 0, y: item["y"] as? Double ?? 0,
+                                   width: item["w"] as? Double ?? 0, height: item["h"] as? Double ?? 0)
+                let size = frame.width * frame.height
+                if item["pseudo"] as? Bool == true { return (line, drawn, size) }
+                let box = frame.intersection(inner)
                 let count = box.isNull ? 0 : pixels.drawn(in: box)
-                return count > 0 ? (line, count) : nil
-            }.enumerated().sorted { ($0.element.1, -$0.offset) > ($1.element.1, -$1.offset) }.prefix(12).map(\.element.0)
+                return count > 0 ? (line, count, size) : nil
+            }.enumerated().sorted { a, b in
+                // More drawn pixels first; with the same count, the smaller element (it is more
+                // exact), then the page's order.
+                if a.element.1 != b.element.1 { return a.element.1 > b.element.1 }
+                if a.element.2 != b.element.2 { return a.element.2 < b.element.2 }
+                return a.offset < b.offset
+            }.prefix(12).map(\.element.0)
             var file: String?
-            if let folder, let png = pixels.markedImage(of: area.rect) {
+            if let folder, let png = pixels.markedImage(of: area.rect.insetBy(dx: -32, dy: -32), focus: inner) {
                 file = "\(prefix)-\(area.id).png"
                 try? png.write(to: folder.appendingPathComponent(file!))
             }
@@ -198,7 +206,7 @@ enum PageVisualCheck {
     /// The page as it shows in the panel: on a gray like the panel's material.
     static func panelImage(_ web: WKWebView) async -> Data? {
         guard let image = try? await web.takeSnapshot(configuration: nil), let pixels = Pixels(image) else { return nil }
-        return pixels.markedImage(of: CGRect(origin: .zero, size: image.size), marks: false)
+        return pixels.markedImage(of: CGRect(origin: .zero, size: image.size))
     }
 
     /// The snapshot's pixels as 8-bit RGBA (premultiplied), first row at the top.
@@ -239,9 +247,11 @@ enum PageVisualCheck {
             return count
         }
 
-        /// A PNG of `rect` on the panel's gray. With `marks`, a second copy below it shows the
-        /// drawn pixels in red.
-        func markedImage(of rect: CGRect, marks: Bool = true) -> Data? {
+        /// A PNG of `rect` on the panel's gray. With a `focus` area, a yellow line marks it, and a
+        /// second copy below shows the drawn pixels: red in the area, dark gray outside it.
+        func markedImage(of rect: CGRect, focus: CGRect? = nil) -> Data? {
+            let marks = focus != nil
+            let (fx0, fx1, fy0, fy1) = focus.map { box($0) } ?? (0, 0, 0, 0)
             let (x0, x1, y0, y1) = box(rect)
             let w = x1 - x0, h = y1 - y0
             guard w > 0, h > 0 else { return nil }
@@ -256,13 +266,17 @@ enum PageVisualCheck {
                 for x in 0..<w {
                     let o = (y * w + x) * 4
                     var rgb = (gray, gray, gray)
+                    let px = x0 + x, py = y0 + (y < h ? y : y - h - gap)
+                    let inFocus = px >= fx0 && px < fx1 && py >= fy0 && py < fy1
+                    let onEdge = inFocus && (px == fx0 || px == fx1 - 1 || py == fy0 || py == fy1 - 1)
                     if y < h {
-                        let i = ((y0 + y) * width + x0 + x) * 4
+                        let i = (py * width + px) * 4
                         let a = Double(data[i + 3]) / 255
                         rgb = (Double(data[i]) + gray * (1 - a), Double(data[i + 1]) + gray * (1 - a), Double(data[i + 2]) + gray * (1 - a))
+                        if marks, onEdge { rgb = (255, 214, 10) }
                     } else if y >= h + gap {
-                        let i = ((y0 + y - h - gap) * width + x0 + x) * 4
-                        rgb = data[i + 3] > PageVisualCheck.alphaLimit ? (255, 40, 40) : (20, 20, 20)
+                        let drawn = data[(py * width + px) * 4 + 3] > PageVisualCheck.alphaLimit
+                        rgb = drawn ? (inFocus ? (255, 40, 40) : (90, 90, 90)) : (20, 20, 20)
                     } else {
                         rgb = (128, 128, 128)
                     }
