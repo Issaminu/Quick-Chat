@@ -70,7 +70,7 @@ close_issues() { # label, reason
 # A problem that this run did not find is gone.
 reached=(page-check-blocked page-check-failed)        # the check reached ChatGPT
 case "$OUTCOME" in
-  ok) for l in page-change page-check-session "${reached[@]}"; do close_issues "$l" "The daily page check passes again: all page hooks work."; done ;;
+  ok) for l in page-change page-check-session "${reached[@]}"; do close_issues "$l" "The daily page check passes again: all page hooks work, and the screen checks pass."; done ;;
   broken) for l in page-check-session "${reached[@]}"; do close_issues "$l" "The daily page check runs again."; done ;;
   session) for l in "${reached[@]}"; do close_issues "$l" "The daily page check reaches ChatGPT again."; done ;;
 esac
