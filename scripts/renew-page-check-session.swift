@@ -98,8 +98,17 @@ enum RenewSession {
         const text = (document.title + ' ' + (document.body ? document.body.innerText : '')).slice(0, 4000);
         if (document.querySelector('iframe[src*="challenges.cloudflare.com"], iframe[src*="arkoselabs"], iframe[src*="hcaptcha"], iframe[src*="recaptcha"], #challenge-form, #cf-challenge-running')
             || /just a moment|attention required|verify you are human/i.test(text)) return 'challenge';
+        // OpenAI can send a code to the email first, and offer the password as another way.
+        const withPassword = [...document.querySelectorAll('button, a, [role="button"]')]
+            .find(b => shown(b) && /password/i.test(b.textContent) && !/forgot|reset/i.test(b.textContent));
         const code = document.querySelector('input[autocomplete="one-time-code"], input[name="code"], input[name="otp"]');
-        if (shown(code) || /check your inbox|enter the code|verification code|authenticator/i.test(text)) return 'code';
+        const codeWords = text.match(/check your inbox|enter the code|verification code|authenticator/i);
+        if (shown(code) || codeWords) {
+            if (withPassword && !document.querySelector('input[type="password"]')) { withPassword.click(); return 'use-password'; }
+            const labels = [...document.querySelectorAll('button, a, [role="button"], h1, h2')].filter(shown)
+                .map(b => b.textContent.trim().replace(/\\S+@\\S+/g, '(email)').slice(0, 40)).filter(Boolean).slice(0, 12);
+            return 'code: ' + (shown(code) ? 'a code field' : 'the words "' + codeWords[0] + '"') + '; page controls: ' + labels.join(' | ');
+        }
         const type = (input, value) => {
             Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value);
             input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -135,7 +144,8 @@ enum RenewSession {
             case "challenge":
                 print("The sign-in stopped: OpenAI showed a bot check. A person must sign in.")
                 exit(5)
-            case "code":
+            case let step where step.hasPrefix("code"):
+                print("Found \(step.dropFirst(6))")
                 print("The sign-in stopped: OpenAI asked for a code (email or second factor). A person must sign in.")
                 exit(5)
             case "wait":
