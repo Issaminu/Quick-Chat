@@ -304,11 +304,29 @@ enum PageHookCheck {
         }
         if let blocked = await blockedNote(web, status: messages.status) { return .blocked(blocked) }
         try? await Task.sleep(for: .seconds(6))
-        let signedIn = try? await web.callAsyncJavaScript(
-            "try { const session = await (await fetch('/api/auth/session')).json(); return !!(session && session.user); } catch { return null; }",
-            arguments: [:], in: nil, contentWorld: .page) as? Bool
-        if signedIn == false { return .signedOut }
+        if await signedOut(web) { return .signedOut }
         return messages.state["ready"] as? Bool == true ? .ready : .notReady
+    }
+
+    /// True when the page is not signed in. The session API can answer with a user while the page
+    /// itself shows the sign-in form (an expired session on 19 November 2026), so the check also
+    /// looks at the page: a sign-in form or button, and no composer.
+    static func signedOut(_ web: WKWebView) async -> Bool {
+        let answer = try? await web.callAsyncJavaScript("""
+            let user = null;
+            try {
+                const session = await (await fetch('/api/auth/session', { cache: 'no-store' })).json();
+                user = !!(session && session.user);
+            } catch {}
+            if (user === false) return true;
+            if (location.hostname !== 'chatgpt.com') return true;
+            if (document.querySelector('[data-testid="login-button"], [data-testid="signup-button"]')) return true;
+            const composer = document.querySelector('#prompt-textarea, form[data-chatgpt-composer]');
+            const signIn = document.querySelector('input[type="email"], input[name="email"], a[href*="/auth/login"]')
+                || [...document.querySelectorAll('h1, h2')].some(heading => /log in|sign up|sign in/i.test(heading.textContent));
+            return !composer && !!signIn;
+            """, arguments: [:], in: nil, contentWorld: .page) as? Bool
+        return answer == true
     }
 
     /// A note when the page is a block or a challenge page instead of ChatGPT.

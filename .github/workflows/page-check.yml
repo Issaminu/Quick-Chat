@@ -98,7 +98,8 @@ jobs:
           retention-days: 14
 
       - name: Report on GitHub issues
-        if: always() && env.HAS_SESSION == 'true' && inputs.report != false
+        # A scheduled run has no inputs, and null == false is true in these expressions.
+        if: always() && env.HAS_SESSION == 'true' && (github.event_name != 'workflow_dispatch' || inputs.report)
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
