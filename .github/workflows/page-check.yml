@@ -10,10 +10,9 @@ name: Page check
 #
 # Setup (see README, "The daily page check"):
 #   secret   CHATGPT_SESSION        the test account's cookies (scripts/renew-page-check-session.sh)
-#   secrets  CHATGPT_TEST_ACCOUNT_EMAIL and CHATGPT_TEST_ACCOUNT_PASSWORD (optional)
-#                                   the test account, to sign in again when the session expired
-#   secret   SECRETS_TOKEN          (optional) a fine-grained token with "Secrets: read and write"
-#                                   on this repository, to store the new session
+#   secret   SECRETS_TOKEN          (optional) a fine-grained token for this repository only, with
+#                                   "Secrets: read and write". Each signed-in run then stores the
+#                                   session that the page renewed, so that it does not get old.
 #   variable CHATGPT_CONVERSATION   a conversation of the test account to open
 # Without the secret, the workflow does nothing.
 
@@ -73,8 +72,6 @@ jobs:
         env:
           CHATGPT_SESSION: ${{ secrets.CHATGPT_SESSION }}
           CONVERSATION: ${{ vars.CHATGPT_CONVERSATION }}
-          CHATGPT_TEST_ACCOUNT_EMAIL: ${{ secrets.CHATGPT_TEST_ACCOUNT_EMAIL }}
-          CHATGPT_TEST_ACCOUNT_PASSWORD: ${{ secrets.CHATGPT_TEST_ACCOUNT_PASSWORD }}
           SECRETS_TOKEN: ${{ secrets.SECRETS_TOKEN }}
         run: |
           umask 077
@@ -85,38 +82,22 @@ jobs:
             scripts/PageVisualCheck.swift scripts/check-page-hooks.swift -o "$RUNNER_TEMP/check-page-hooks"
           previous=()
           [ -f "$RUNNER_TEMP/previous/result.json" ] && previous=(--previous "$RUNNER_TEMP/previous/result.json" --previous-url "$PREVIOUS_URL")
-          check() {
-            "$RUNNER_TEMP/check-page-hooks" --cookies "$RUNNER_TEMP/session.json" \
-              ${CONVERSATION:+--conversation "$CONVERSATION"} "${previous[@]}" --out page-check
-          }
           set +e
-          check
+          "$RUNNER_TEMP/check-page-hooks" --cookies "$RUNNER_TEMP/session.json" \
+            ${CONVERSATION:+--conversation "$CONVERSATION"} "${previous[@]}" \
+            --save-cookies "$RUNNER_TEMP/new-session.json" --out page-check
           code=$?
-          # An expired session: sign in again with the test account, and check again.
-          if [ $code = 3 ] && [ -n "$CHATGPT_TEST_ACCOUNT_EMAIL" ] && [ -n "$CHATGPT_TEST_ACCOUNT_PASSWORD" ]; then
-            echo "The session expired. Signing in again with the test account."
-            swiftc -swift-version 6 -parse-as-library scripts/renew-page-check-session.swift -o "$RUNNER_TEMP/renew" &&
-              "$RUNNER_TEMP/renew" "$RUNNER_TEMP/new-session.json" --auto > "$RUNNER_TEMP/sign-in.log" 2>&1
-            signin=$?
-            cat "$RUNNER_TEMP/sign-in.log"
-            if [ $signin = 0 ]; then
-              mv "$RUNNER_TEMP/new-session.json" "$RUNNER_TEMP/session.json"
-              if [ -n "$SECRETS_TOKEN" ] && GH_TOKEN="$SECRETS_TOKEN" gh secret set CHATGPT_SESSION -R "$GITHUB_REPOSITORY" < "$RUNNER_TEMP/session.json"; then
-                note="The session had expired. The check signed in again and stored the new session."
-              else
-                note="The session had expired. The check signed in again for this run only: add a SECRETS_TOKEN secret to store the new session (see the README)."
-              fi
-              rm -rf page-check
-              check
-              code=$?
-            else
-              note="The automatic sign-in did not work. $(tail -n 1 "$RUNNER_TEMP/sign-in.log")"
-            fi
-            echo "$note"
-            mkdir -p page-check
-            printf '\n%s\n' "$note" >> page-check/report.md
-          fi
           set -e
+          # Store the session that the page renewed, so that it does not get old.
+          if [ -s "$RUNNER_TEMP/new-session.json" ]; then
+            if [ -z "$SECRETS_TOKEN" ]; then
+              echo "No SECRETS_TOKEN secret: the renewed session is not stored."
+            elif GH_TOKEN="$SECRETS_TOKEN" gh secret set CHATGPT_SESSION -R "$GITHUB_REPOSITORY" < "$RUNNER_TEMP/new-session.json"; then
+              echo "Stored the renewed session."
+            else
+              echo "::warning::Could not store the renewed session. Check the SECRETS_TOKEN secret."
+            fi
+          fi
           rm -f "$RUNNER_TEMP/session.json" "$RUNNER_TEMP/new-session.json"
           case $code in 0) outcome=ok ;; 1) outcome=broken ;; 2) outcome=blocked ;; 3) outcome=session ;; *) outcome=failed ;; esac
           echo "outcome=$outcome" >> "$GITHUB_OUTPUT"

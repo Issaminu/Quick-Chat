@@ -17,6 +17,8 @@
 //   opens the newest conversation that the page links to.
 // --previous, --previous-url: result.json of the last passing run, and a link to that run. The
 //   report then lists the page's data-* attribute names that are gone or new since then.
+// --save-cookies: after a signed-in run, write the page's cookies to this file (the format of
+//   --cookies). The page renews its session, and the workflow stores the file as the secret.
 // --out: a folder for report.md, result.json, an image of each page as the panel shows it, and a
 //   marked image of each failed screen check.
 //
@@ -119,7 +121,7 @@ enum PageHookCheck {
 
     static func run() async -> Outcome {
         guard let cookiesPath = argument("--cookies"), let out = argument("--out") else {
-            print("usage: check-page-hooks --cookies FILE [--conversation URL] [--previous FILE --previous-url URL] --out FOLDER")
+            print("usage: check-page-hooks --cookies FILE [--conversation URL] [--previous FILE --previous-url URL] [--save-cookies FILE] --out FOLDER")
             return .failed
         }
         let folder = URL(fileURLWithPath: out, isDirectory: true)
@@ -281,8 +283,41 @@ enum PageHookCheck {
         if let data = try? JSONSerialization.data(withJSONObject: summary, options: [.prettyPrinted, .sortedKeys]) {
             try? data.write(to: folder.appendingPathComponent("result.json"))
         }
+        // The cookies after a signed-in run, so that the workflow can store the session that the
+        // page renewed. A session in daily use then does not get old.
+        if let path = argument("--save-cookies"), outcome == .ok || outcome == .broken {
+            await saveCookies(configuration.websiteDataStore, to: path)
+        }
         print("Outcome: \(outcome.rawValue)")
         return outcome
+    }
+
+    /// Writes the chatgpt.com and openai.com cookies in the format of --cookies. Cloudflare's
+    /// cookies belong to the machine's address, so they stay out. The values are never printed.
+    static func saveCookies(_ store: WKWebsiteDataStore, to path: String) async {
+        let cookies = await store.httpCookieStore.allCookies().filter {
+            ($0.domain.hasSuffix("chatgpt.com") || $0.domain.hasSuffix("openai.com")) &&
+                !["cf_clearance", "__cf_bm", "_cfuvid"].contains($0.name)
+        }
+        guard cookies.contains(where: { $0.name.hasPrefix("__Secure-next-auth.session-token") }) else {
+            print("No session cookie to save.")
+            return
+        }
+        let list: [[String: Any]] = cookies.map { cookie in
+            var item: [String: Any] = ["name": cookie.name, "value": cookie.value, "domain": cookie.domain,
+                                       "path": cookie.path, "secure": cookie.isSecure, "httpOnly": cookie.isHTTPOnly]
+            if let date = cookie.expiresDate { item["expires"] = date.timeIntervalSince1970 }
+            if let policy = cookie.sameSitePolicy { item["sameSite"] = policy.rawValue.capitalized }
+            return item
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: list),
+              FileManager.default.createFile(atPath: path, contents: data, attributes: [.posixPermissions: 0o600]) else {
+            print("Could not save the cookies.")
+            return
+        }
+        let session = cookies.first { $0.name.hasPrefix("__Secure-next-auth.session-token") }
+        let expiry = session?.expiresDate.map { $0.formatted(date: .abbreviated, time: .omitted) } ?? "unknown"
+        print("Saved \(cookies.count) cookies. The session expires on \(expiry).")
     }
 
     enum Loaded: Equatable { case ready, notReady, signedOut, blocked(String) }

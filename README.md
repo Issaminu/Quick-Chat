@@ -253,7 +253,7 @@ It reports on GitHub issues. Each kind of problem has one issue with its own lab
 | Label | Meaning | What to do |
 | --- | --- | --- |
 | `page-change` | ChatGPT changed its page. The issue lists what users see, each broken hook and failed screen check, and the changed attribute names. | Update the hook in `PageHooks.swift` and `QuickChatPageStyle.swift`. The run's artifact has an image of each page as the panel shows it. |
-| `page-check-session` | The test account's session expired (after about 90 days). | Run `scripts/renew-page-check-session.sh` on a Mac and sign in with the test account. |
+| `page-check-session` | The test account's session expired or ChatGPT ended it. Without `SECRETS_TOKEN`, this happened after 12 days. | Run `scripts/renew-page-check-session.sh` on a Mac and sign in with the test account. |
 | `page-check-blocked` | The site blocked the check (for example a Cloudflare challenge). | Wait a day. If it stays, the check needs another way to reach the site. |
 | `page-check-failed` | The check itself could not run. | Read the run's log. |
 
@@ -263,8 +263,9 @@ To set it up in your own fork:
 2. Sign in with it and send one message that asks for a paragraph, a list, a table and a code block. Copy the conversation's address.
 3. In a clone, run `scripts/renew-page-check-session.sh` and sign in with the test account in its window. It stores the session as the `CHATGPT_SESSION` secret. The session never shows on screen.
 4. Run `gh variable set CHATGPT_CONVERSATION --body "<the conversation's address>"`.
-5. In a fork, turn on workflows in the Actions tab: GitHub turns off scheduled workflows in forks, and after 60 days without activity in a repository.
-6. Run the check once: `gh workflow run page-check.yml`. To run it without a change to the issues (for example on a branch), add `-f report=false`.
+5. Optional, recommended: keep the session alive. On GitHub, make a fine-grained personal access token for this repository only, with the permission "Secrets: read and write" and no other permission. Store it with `gh secret set SECRETS_TOKEN`. After each signed-in run, the workflow then stores the session that the page renewed. You still must sign in again if ChatGPT ends the session itself.
+6. In a fork, turn on workflows in the Actions tab: GitHub turns off scheduled workflows in forks, and after 60 days without activity in a repository.
+7. Run the check once: `gh workflow run page-check.yml`. To run it without a change to the issues (for example on a branch), add `-f report=false`.
 
 To run the check on your Mac with a session file: build it with the command at the top of `scripts/check-page-hooks.swift`.
 
