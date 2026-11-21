@@ -93,7 +93,7 @@ enum Check {
         } else {
             check(m["gap"] as? Int == 0,"\(state): messages end at the composer top",m["gap"]!)
             check(m["mask"] as? Bool == true,"\(state): the message mask covers the visible messages",m["mask"]!)
-            check(m["textSize"] as? String == "15px","\(state): message text is 15 points",m["textSize"]!)
+            check(m["textSize"] as? String == "14px","\(state): message text is 14 points",m["textSize"]!)
         }
     }
     static func run() async {

@@ -28,7 +28,7 @@ enum PageStyleCheck {
     }
 
     static let fixture = """
-        <!doctype html><html data-theme="dark" style="color-scheme:dark"><head><style>
+        <!doctype html><html data-theme="dark" style="color-scheme:dark; --font-ui-size:16px; --text-base:16px; --text-sm:14px; --text-page-body:15px; --page-font-scale:1.0714"><head><style>
         :root { --color-surface:#0e0e0e; --thread-composer-bottom-inset:24px; }
         * { box-sizing:border-box; } html, body { margin:0; height:100%; background:#0e0e0e; color:#fff; }
         .bg-surface { background-color:var(--color-surface); }
@@ -159,7 +159,12 @@ enum PageStyleCheck {
                 if (scroller.scrollHeight <= scroller.clientHeight) {
                     result['mask starts at the top of the visible area'] = getComputedStyle(content).maskPosition.endsWith('-32px');
                 }
-                result['message text is 15 points'] = getComputedStyle(content).getPropertyValue('--font-text-md-size').trim() === '15px';
+                const value = (e, name) => getComputedStyle(e).getPropertyValue(name).trim();
+                result['message text is 14 points'] = value(content, '--font-text-md-size') === '14px';
+                result['message headings are 14/16 of the page sizes'] = value(content, '--font-heading-md-size') === '14px' && value(content, '--font-heading-2xl-size') === '21px';
+                result['your messages are 14 points'] = getComputedStyle(content).fontSize === '14px';
+                result['the interface text is 14 points'] = value(document.documentElement, '--font-ui-size') === '14px' &&
+                    value(document.documentElement, '--text-base') === '14px' && value(document.documentElement, '--text-sm') === '12px' && value(document.documentElement, '--text-page-body') === '14px';
                 result['disclaimer is hidden and takes no space'] = $('#disclaimer').getClientRects().length === 0;
                 result['opaque composer backdrop is hidden'] = !shown($('[data-thread-scroll-footer] > [aria-hidden]'));
                 result['the fade under the title bar draws nothing'] = getComputedStyle($('.content-fade')).backgroundImage === 'none';

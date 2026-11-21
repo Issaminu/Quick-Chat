@@ -238,10 +238,24 @@ enum QuickChatPageStyle {
             mask-repeat: no-repeat;
         }
 
-        /* Text looks like native text: the system's font smoothing, and 15-point message text like
-           ChatGPT's own companion window. Table text keeps its smaller size. */
+        /* Text looks like native text: the system's font smoothing, and 14-point text, like the
+           panel before ChatGPT's text size settings. ChatGPT sets its interface sizes on the root
+           from a size setting (16 points by default); these are its own values for 14 points (its
+           sizes × 14/16, rounded). Messages use the same scale; table text keeps its smaller size. */
         * { -webkit-font-smoothing: auto !important; }
-        [data-app-action-timeline-scroll] :not(th, td, th *, td *) { --font-text-md-size: 15px !important; }
+        :root, body {
+            --font-ui-size: 14px !important; --text-page-body: 14px !important; --page-font-scale: 1 !important;
+            --text-xs: 11px !important; --text-sm: 12px !important; --text-base: 14px !important; --text-lg: 16px !important;
+            --text-xl: 18px !important; --text-2xl: 21px !important; --text-3xl: 26px !important; --text-4xl: 32px !important;
+            --text-dynamic-isle-row: 12px !important; --text-heading-sm: 16px !important; --text-heading-md: 18px !important;
+            --text-heading-lg: 21px !important; --text-heading-app: 25px !important;
+        }
+        [data-app-action-timeline-scroll] { font-size: 14px; }
+        [data-app-action-timeline-scroll] :not(th, td, th *, td *) {
+            --font-text-md-size: 14px !important;
+            --font-heading-sm-size: 14px !important; --font-heading-md-size: 14px !important; --font-heading-lg-size: 16px !important;
+            --font-heading-xl-size: 18px !important; --font-heading-2xl-size: 21px !important;
+        }
 
         /* Like a native app: only text in the message list, the composer and form fields can be
            selected. Buttons, labels, the title bar, the sidebar and menus cannot, also with ⌘A. */
