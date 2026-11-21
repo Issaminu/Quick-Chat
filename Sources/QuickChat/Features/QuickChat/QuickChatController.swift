@@ -365,6 +365,8 @@ final class QuickChatController: NSObject {
                                                                 injectionTime: .atDocumentStart, forMainFrameOnly: false))
         config.userContentController.addUserScript(WKUserScript(source: QuickChatPageStyle.noAutocorrectScript,
                                                                 injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        config.userContentController.addUserScript(WKUserScript(source: QuickChatPageStyle.noSavedKeysScript,
+                                                                injectionTime: .atDocumentStart, forMainFrameOnly: true))
         config.userContentController.addUserScript(WKUserScript(source: PageFind.script, injectionTime: .atDocumentStart,
                                                                 forMainFrameOnly: true, in: PageFind.world))
         if Self.startsClean {

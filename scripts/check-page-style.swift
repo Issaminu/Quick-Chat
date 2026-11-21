@@ -398,6 +398,28 @@ enum PageStyleCheck {
         print("\(lightButton ? "PASS" : "FAIL") light mode: the primary button is black with a white icon")
         if !lightButton { failures += 1 }
 
+        // Saved encryption keys: the script deletes ChatGPT's key database and refuses new keys,
+        // so that WebKit never needs its keychain key. (The test stores no key: that would use
+        // the keychain.)
+        let noKeys = try await web.callAsyncJavaScript("""
+            const open = (name, store) => new Promise(resolve => { const r = indexedDB.open(name, 1); r.onupgradeneeded = () => r.result.createObjectStore(store); r.onsuccess = () => resolve(r.result); });
+            (await open("spaces-browse-octane-keys-v1", "keys")).close();
+            eval(script);
+            await new Promise(resolve => setTimeout(resolve, 300));
+            const gone = !(await indexedDB.databases()).some(d => d.name === "spaces-browse-octane-keys-v1");
+            const key = await crypto.subtle.importKey("raw", new Uint8Array(32), "HKDF", false, ["deriveKey"]);
+            const db = await open("quick-chat-key-test", "s");
+            const transaction = db.transaction("s", "readwrite"), store = transaction.objectStore("s");
+            const refused = value => { try { store.put(value, "k"); return false; } catch (e) { return e.name === "DataCloneError"; } };
+            const result = gone && refused(key) && refused({ key });
+            store.put({ text: "other data" }, "t");
+            const saved = await new Promise(resolve => { transaction.oncomplete = () => resolve(true); transaction.onabort = () => resolve(false); });
+            db.close(); indexedDB.deleteDatabase("quick-chat-key-test");
+            return result && saved;
+            """, arguments: ["script": QuickChatPageStyle.noSavedKeysScript], in: nil, contentWorld: .page) as? Bool == true
+        print("\(noKeys ? "PASS" : "FAIL") saved keys: the key database is deleted, new keys are refused, other data is saved")
+        if !noKeys { failures += 1 }
+
         // Saved drafts: the script removes only the draft entries, once per session.
         let draftsCleared = try await web.callAsyncJavaScript("""
             const db = await new Promise(resolve => { const r = indexedDB.open("codex-browser-host", 1); r.onupgradeneeded = () => r.result.createObjectStore("records"); r.onsuccess = () => resolve(r.result); });

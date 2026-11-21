@@ -681,6 +681,33 @@ enum QuickChatPageStyle {
         })();
         """#
 
+    /// The page may not save encryption keys (CryptoKey objects) in its IndexedDB storage. To
+    /// save one, WebKit encrypts it with a master key in the login keychain ("Quick Chat
+    /// WebCrypto Master Key"), and macOS asks for the keychain password after each ad-hoc signed
+    /// build. ChatGPT saves a key only for its "Spaces Recents" cache, which loads from the
+    /// network without it. The script also deletes that cache's key database before the page
+    /// opens it, so that WebKit does not read an old key from the keychain.
+    static let noSavedKeysScript = #"""
+        (() => {
+            const host = location.hostname.toLowerCase();
+            if (host !== "chatgpt.com" && !host.endsWith(".chatgpt.com")) return;
+            const keyDatabase = /^spaces-browse-octane-keys/i;
+            indexedDB.deleteDatabase("spaces-browse-octane-keys-v1");
+            indexedDB.databases?.().then(list => {
+                for (const { name } of list) if (keyDatabase.test(name ?? "")) indexedDB.deleteDatabase(name);
+            }).catch(() => {});
+            const hasKey = value => value instanceof CryptoKey ||
+                (!!value && typeof value === "object" && !ArrayBuffer.isView(value) && Object.values(value).some(v => v instanceof CryptoKey));
+            for (const name of ["put", "add"]) {
+                const original = IDBObjectStore.prototype[name];
+                IDBObjectStore.prototype[name] = function (value, ...rest) {
+                    if (hasKey(value)) throw new DOMException("Quick Chat does not save encryption keys.", "DataCloneError");
+                    return original.call(this, value, ...rest);
+                };
+            }
+        })();
+        """#
+
     /// `value` as a JavaScript string literal.
     private static func javaScriptString(_ value: String) -> String {
         let data = try! JSONSerialization.data(withJSONObject: [value])
