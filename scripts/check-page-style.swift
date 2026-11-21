@@ -14,6 +14,11 @@ import WebKit
 @MainActor
 enum PageStyleCheck {
     static func main() {
+        // The scroll bars that macOS shows with a mouse connected: the thin scroll bar must
+        // replace them too.
+        UserDefaults.standard.setVolatileDomain(
+            UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain).merging(["AppleShowScrollBars": "Always"]) { a, _ in a },
+            forName: UserDefaults.argumentDomain)
         NSApplication.shared.setActivationPolicy(.accessory)
         Task {
             do { try await check() }
@@ -55,7 +60,11 @@ enum PageStyleCheck {
         #scroll-down { position:absolute; left:50%; bottom:100%; width:32px; height:32px; }
         .disclaimer { visibility:var(--thread-composer-disclaimer-visibility, inherit); }
         [role="menu"] { position:fixed; top:200px; left:100px; width:100px; height:40px; }
-        </style></head><body><div data-app-shell-active-page="true"><main data-app-shell-main-surface>
+        .fade-host { --app-shell-content-fade:linear-gradient(to bottom, currentColor 24%, transparent); --app-shell-content-fade-height:80px; }
+        .content-fade { position:absolute; inset:0 0 auto 0; z-index:20; pointer-events:none; color:#0e0e0e;
+                        height:var(--app-shell-content-fade-height, 16px); background-image:var(--app-shell-content-fade, linear-gradient(to bottom, currentColor, transparent)); }
+        </style></head><body><div data-app-shell-active-page="true"><main data-app-shell-main-surface class="fade-host">
+        <div aria-hidden="true" class="content-fade"></div>
         <header data-app-shell-titlebar>
           <div data-app-shell-header-slot="start"><div><div>
             <div class="bg-surface"><div><button id="sidebar-button" aria-controls="sidebar">S</button></div></div>
@@ -153,6 +162,7 @@ enum PageStyleCheck {
                 result['message text is 15 points'] = getComputedStyle(content).getPropertyValue('--font-text-md-size').trim() === '15px';
                 result['disclaimer is hidden and takes no space'] = $('#disclaimer').getClientRects().length === 0;
                 result['opaque composer backdrop is hidden'] = !shown($('[data-thread-scroll-footer] > [aria-hidden]'));
+                result['the fade under the title bar draws nothing'] = getComputedStyle($('.content-fade')).backgroundImage === 'none';
                 result['the footer draws no backdrop'] = ['::before', '::after'].every(p => { const s = getComputedStyle($('.footer'), p); return alpha(s.backgroundColor) === 0 && s.backgroundImage === 'none'; });
             }
             return result;
@@ -248,6 +258,32 @@ enum PageStyleCheck {
         for name in maskCases.keys.sorted() {
             print("\(maskCases[name]! ? "PASS" : "FAIL") the mask covers the visible messages \(name)")
             if !maskCases[name]! { failures += 1 }
+        }
+
+        // WebKit can keep the standard scroll bar of a scroll area that it made before the style
+        // applied (its track shows as a gray strip). The page script makes WebKit build the
+        // thin one again.
+        _ = try await web.evaluateJavaScript("show('conversation')")
+        try await Task.sleep(for: .milliseconds(200))
+        let stale = try await web.callAsyncJavaScript("""
+            const frames = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+            const scroller = document.querySelector('[data-app-action-timeline-scroll]');
+            const bar = () => scroller.offsetWidth - scroller.clientWidth;
+            const sheets = [...document.adoptedStyleSheets];
+            document.adoptedStyleSheets = [];
+            scroller.style.display = 'none'; scroller.offsetWidth; scroller.style.display = ''; scroller.offsetWidth;
+            document.adoptedStyleSheets = sheets;
+            const before = bar();
+            scroller.scrollTop = 80;
+            scroller.firstElementChild.append(document.createElement('p'));
+            await frames(); await frames();
+            const result = { 'the test has a standard scroll bar': before > 10, 'the thin scroll bar comes back': bar() === 10, 'the scroll position stays': scroller.scrollTop === 80 };
+            scroller.firstElementChild.lastElementChild.remove(); scroller.scrollTop = 0;
+            return result;
+            """, arguments: [:], in: nil, contentWorld: .page) as! [String: Bool]
+        for name in stale.keys.sorted() {
+            print("\(stale[name]! ? "PASS" : "FAIL") a stale scroll bar: \(name)")
+            if !stale[name]! { failures += 1 }
         }
 
         // A press on the background moves the panel; a press on content or a control does not.

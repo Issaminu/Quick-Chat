@@ -216,6 +216,9 @@ enum QuickChatPageStyle {
         }
         /* The page's spacer kept the last message clear of the composer; now it only clears the fade. */
         [data-app-action-timeline-scroll] > :first-child > [aria-hidden="true"]:last-child { height: var(--quick-chat-fade) !important; }
+        /* ChatGPT fades the messages under its title bar with a fill in the page's surface color,
+           which shows as a dark band in the panel. The panel has its own fade (the mask below). */
+        * { --app-shell-content-fade: none !important; }
         /* Messages stop at the bottom edge of the title bar (they fade in under it while it is
            hidden) and fade out above the composer. A mask on the scroll area would also hide the
            composer, so the mask is on the content. The page script moves the mask with the visible
@@ -537,8 +540,30 @@ enum QuickChatPageStyle {
                 [content.style.maskPosition, content.style.maskSize] = wanted.split("|");
                 masks.set(content, { wanted, position: content.style.maskPosition, size: content.style.maskSize });
             };
+            // WebKit can keep the standard scroll bar of a scroll area after the style gives it
+            // the thin one (seen with a mouse connected, after the panel was open for some days).
+            // Its track then shows as a gray strip. The thin scroll bar is 10 pixels wide and the
+            // standard one is wider, so a wider one is built again with a short overflow change.
+            const rebuilt = new WeakMap();
+            const keepThinScrollBar = element => {
+                const style = getComputedStyle(element);
+                const bar = element.offsetWidth - element.clientWidth - parseFloat(style.borderLeftWidth) - parseFloat(style.borderRightWidth);
+                if (bar <= 10) return;
+                const tries = rebuilt.get(element) ?? 0;
+                if (tries >= 3) return;
+                rebuilt.set(element, tries + 1);
+                const top = element.scrollTop;
+                const value = element.style.getPropertyValue("overflow-y"), priority = element.style.getPropertyPriority("overflow-y");
+                element.style.setProperty("overflow-y", "hidden", "important");
+                element.offsetWidth;
+                if (value) element.style.setProperty("overflow-y", value, priority); else element.style.removeProperty("overflow-y");
+                element.scrollTop = top;
+            };
+            const thinScrollBars = '[data-app-action-timeline-scroll], form[data-chatgpt-composer] [data-rich-text-layout]';
             document.addEventListener("scroll", event => {
-                if (event.target instanceof Element && event.target.matches(scrollerSelector)) {
+                if (!(event.target instanceof Element)) return;
+                if (event.target.matches(thinScrollBars)) keepThinScrollBar(event.target);
+                if (event.target.matches(scrollerSelector)) {
                     scroller = event.target;
                     alignMask(scroller);
                 }
@@ -550,6 +575,7 @@ enum QuickChatPageStyle {
                 pending = false;
                 const rendered = [...document.querySelectorAll(scrollerSelector)].find(e => e.getClientRects().length);
                 if (rendered) { scroller = rendered; alignMask(rendered); }
+                for (const element of document.querySelectorAll(thinScrollBars)) keepThinScrollBar(element);
                 // Until the page's own style loads, it has no color scheme; the panel then keeps its theme.
                 const scheme = getComputedStyle(document.documentElement).colorScheme;
                 // In safe mode the page shows its own title bar, without the panel's buttons.
